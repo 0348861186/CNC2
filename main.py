@@ -252,48 +252,38 @@ if st.button("🚀 Generate / Refresh Schedule"):
 # 4. STYLE (BORDER + CENTER + PROFESSIONAL)
 # =========================
 def style_matrix(df):
-    lot_colors = {}
-    values = df.values.flatten()
-    lots = [str(x) for x in values if str(x) not in ["nan", "None", "", "SỐ MÁY", "Thuộc tính"]]
-    lots = list(dict.fromkeys(lots))
-
-    cmap = plt.get_cmap("tab20")
-    for i, lot in enumerate(lots):
-        lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))
-
-    def color_row(row):
-        return [
-            f"background-color: {lot_colors.get(str(v), '')}"
-            if str(v) in lot_colors else ""
-            for v in row
-        ]
-
+    ...
     styled = df.style.apply(color_row, axis=1)
-styled = styled.set_table_styles([
-{"selector": "th",
-"props": [
-("background-color", "#1f4e79"),
-("color", "white"),
-("border", "1px solid #333"),
-("text-align", "center"),
-("font-weight", "bold")
-]},
-{"selector": "td",
-"props": [
-("border", "1px solid #ccc"),
-("text-align", "center"),
-("padding", "6px")
-]},
-{"selector": "table",
-"props": [
-("border-collapse", "collapse"),
-("width", "100%")
-]}
-])
-return styled
-=========================
-5. DISPLAY & BẢNG PHỤ TRẠNG THÁI
-=========================
+
+    styled = styled.set_table_styles([
+        {"selector": "th",
+         "props": [
+             ("background-color", "#1f4e79"),
+             ("color", "white"),
+             ("border", "1px solid #333"),
+             ("text-align", "center"),
+             ("font-weight", "bold")
+         ]},
+
+        {"selector": "td",
+         "props": [
+             ("border", "1px solid #ccc"),
+             ("text-align", "center"),
+             ("padding", "6px")
+         ]},
+
+        {"selector": "table",
+         "props": [
+             ("border-collapse", "collapse"),
+             ("width", "100%")
+         ]}
+    ])
+
+    return styled
+
+# =========================
+# 5. DISPLAY & BẢNG PHỤ TRẠNG THÁI
+# =========================
 col_main, col_sub = st.columns([2, 1])
 with col_main:
 if not st.session_state.df_matrix_schedule.empty:
