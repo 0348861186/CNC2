@@ -269,4 +269,79 @@ def style_matrix(df):
         ]
 
     styled = df.style.apply(color_row, axis=1)
-    styled = styled.set_table_styles([{"selector": "th","props": [("background-color", "#1f4e79"),("color", "white"),("border", "1px solid #333"),("text-align", "center"),("font-weight", "bold")]},{"selector": "td","props": [("border", "1px solid #ccc"),("text-align", "center"),("padding", "6px")]},{"selector": "table","props": [("border-collapse", "collapse"),("width", "100%")]}])return styled=========================5. DISPLAY & BẢNG PHỤ TRẠNG THÁI=========================col_main, col_sub = st.columns([2, 1])with col_main:if not st.session_state.df_matrix_schedule.empty:st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")st.dataframe(style_matrix(st.session_state.df_matrix_schedule), use_container_width=True, hide_index=True)else:st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng bấm 'Generate / Refresh Schedule'.")with col_sub:st.subheader("📊 PHỤ: TRẠNG THÁI CHI TIẾT TỪNG LÔ")if not st.session_state.df_raw_schedule_history.empty and not df_orders.empty:df_history = st.session_state.df_raw_schedule_history.copy()df_end_date = df_history.groupby(["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], as_index=False)["Date_Obj"].max()df_end_date.rename(columns={"Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"}, inplace=True)df_status = pd.merge(df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "SL ĐẶT", "TỒN KHO"]],df_end_date,on=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],how="left")def check_status(row):if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):if (row["SL ĐẶT"] - row["TỒN KHO"]) <= 0:return "🟢 Đủ Tồn Kho (OK)"return "⚪ Chưa sắp lịch"date_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"]).date()date_delivery = pd.to_datetime(row["NGÀY GIAO"]).date() if not pd.isna(row["NGÀY GIAO"]) else Noneif date_delivery and date_real > date_delivery:return f"🔴 Lô {row['SỐ LÔ']} trễ ({ (date_real - date_delivery).days } ngày)"else:return f"🟢 Lô {row['SỐ LÔ']} ok"df_status["TRẠNG THÁI"] = df_status.apply(check_status, axis=1)df_status["NGÀY GIAO"] = df_status["NGÀY GIAO"].dt.strftime('%d/%m/%Y').fillna("Chưa có")df_status["NGÀY HOÀN THÀNH THỰC TẾ"] = pd.to_datetime(df_status["NGÀY HOÀN THÀNH THỰC TẾ"]).dt.strftime('%d/%m/%Y').fillna("-")df_display_status = df_status[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "TRẠNG THÁI"]]def style_status_rows(val):if "🔴" in str(val):return "background-color: #ffcccc; color: #cc0000; font-weight: bold;"elif "🟢" in str(val):return "background-color: #e2f0d9; color: #385723;"return ""# Thay đổi từ applymap sang apply theo khuyến nghị mới của Pandas bản caostyled_sub_table = df_display_status.style.apply(lambda x: [style_status_rows(v) for v in x], subset=["TRẠNG THÁI"]).set_table_styles([{"selector": "th", "props": [("background-color", "#2f5597"), ("color", "white"), ("font-weight", "bold")]},{"selector": "td", "props": [("border", "1px solid #ccc"), ("padding", "5px")]}])st.dataframe(styled_sub_table, use_container_width=True, hide_index=True)else:st.info("Hệ thống chưa có đủ lịch trình để phân tích trạng thái các lô.")
+styled = styled.set_table_styles([
+{"selector": "th",
+"props": [
+("background-color", "#1f4e79"),
+("color", "white"),
+("border", "1px solid #333"),
+("text-align", "center"),
+("font-weight", "bold")
+]},
+{"selector": "td",
+"props": [
+("border", "1px solid #ccc"),
+("text-align", "center"),
+("padding", "6px")
+]},
+{"selector": "table",
+"props": [
+("border-collapse", "collapse"),
+("width", "100%")
+]}
+])
+return styled
+=========================
+5. DISPLAY & BẢNG PHỤ TRẠNG THÁI
+=========================
+col_main, col_sub = st.columns([2, 1])
+with col_main:
+if not st.session_state.df_matrix_schedule.empty:
+st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")
+st.dataframe(style_matrix(st.session_state.df_matrix_schedule), use_container_width=True, hide_index=True)
+else:
+st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng bấm 'Generate / Refresh Schedule'.")
+with col_sub:
+st.subheader("📊 PHỤ: TRẠNG THÁI CHI TIẾT TỪNG LÔ")
+if not st.session_state.df_raw_schedule_history.empty and not df_orders.empty:
+df_history = st.session_state.df_raw_schedule_history.copy()
+df_end_date = df_history.groupby(["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], as_index=False)["Date_Obj"].max()
+df_end_date.rename(columns={"Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"}, inplace=True)
+df_status = pd.merge(
+df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "SL ĐẶT", "TỒN KHO"]],
+df_end_date,
+on=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],
+how="left"
+)
+def check_status(row):
+if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):
+if (row["SL ĐẶT"] - row["TỒN KHO"]) <= 0:
+return "🟢 Đủ Tồn Kho (OK)"
+return "⚪ Chưa sắp lịch"
+date_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"]).date()
+date_delivery = pd.to_datetime(row["NGÀY GIAO"]).date() if not pd.isna(row["NGÀY GIAO"]) else None
+if date_delivery and date_real > date_delivery:
+return f"🔴 Lô {row['SỐ LÔ']} trễ ({ (date_real - date_delivery).days } ngày)"
+else:
+return f"🟢 Lô {row['SỐ LÔ']} ok"
+df_status["TRẠNG THÁI"] = df_status.apply(check_status, axis=1)
+df_status["NGÀY GIAO"] = df_status["NGÀY GIAO"].dt.strftime('%d/%m/%Y').fillna("Chưa có")
+df_status["NGÀY HOÀN THÀNH THỰC TẾ"] = pd.to_datetime(df_status["NGÀY HOÀN THÀNH THỰC TẾ"]).dt.strftime('%d/%m/%Y').fillna("-")
+df_display_status = df_status[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "TRẠNG THÁI"]]
+def style_status_rows(val):
+if "🔴" in str(val):
+return "background-color: #ffcccc; color: #cc0000; font-weight: bold;"
+elif "🟢" in str(val):
+return "background-color: #e2f0d9; color: #385723;"
+return ""
+# Thay đổi từ applymap sang apply theo khuyến nghị mới của Pandas bản cao
+styled_sub_table = df_display_status.style.apply(
+lambda x: [style_status_rows(v) for v in x], subset=["TRẠNG THÁI"]
+).set_table_styles([
+{"selector": "th", "props": [("background-color", "#2f5597"), ("color", "white"), ("font-weight", "bold")]},
+{"selector": "td", "props": [("border", "1px solid #ccc"), ("padding", "5px")]}
+])
+st.dataframe(styled_sub_table, use_container_width=True, hide_index=True)
+else:
+st.info("Hệ thống chưa có đủ lịch trình để phân tích trạng thái các lô.")
+
