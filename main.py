@@ -285,12 +285,17 @@ def style_matrix(df):
 # 5. DISPLAY & BẢNG PHỤ TRẠNG THÁI
 # =========================
 col_main, col_sub = st.columns([2, 1])
+
 with col_main:
-if not st.session_state.df_matrix_schedule.empty:
-st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")
-st.dataframe(style_matrix(st.session_state.df_matrix_schedule), use_container_width=True, hide_index=True)
-else:
-st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng bấm 'Generate / Refresh Schedule'.")
+    if not st.session_state.df_matrix_schedule.empty:
+        st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")
+        st.dataframe(
+            style_matrix(st.session_state.df_matrix_schedule),
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng bấm 'Generate / Refresh Schedule'.")
 with col_sub:
 st.subheader("📊 PHỤ: TRẠNG THÁI CHI TIẾT TỪNG LÔ")
 if not st.session_state.df_raw_schedule_history.empty and not df_orders.empty:
