@@ -7,18 +7,25 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 # =========================
-# 1. CONFIG & STYLE
+# 1. CONFIG
 # =========================
-st.set_page_config(page_title="production schedule", layout="wide")
-st.title("📅 production schedule dashboard")
+st.set_page_config(page_title="Production Schedule", layout="wide")
+st.title("📅 PRODUCTION SCHEDULE DASHBOARD")
 
 st.markdown("""
-    <style>
-    .block-container { padding-top: 1rem; }
-    h1 { font-size: 30px; }
-    table { border-collapse: collapse !important; width: 100%; }
-    td, th { text-align: center !important; vertical-align: middle !important; padding: 8px !important; }
-    </style>
+<style>
+.block-container { padding-top: 1rem; }
+h1 { font-size: 30px; }
+
+/* TABLE STYLE GLOBAL */
+table {
+    border-collapse: collapse !important;
+}
+td, th {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+</style>
 """, unsafe_allow_html=True)
 
 # =========================
@@ -29,169 +36,227 @@ if "df_matrix_schedule" not in st.session_state:
 
 if "df_raw_schedule_history" not in st.session_state:
     st.session_state.df_raw_schedule_history = pd.DataFrame(
-        columns=["số máy", "date_obj", "số lô", "mã hàng", "năng suất", "seq"]
+        columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
 
-# Bộ nhớ lưu trữ dữ liệu Tồn kho (Cập nhật hàng ngày)
-if "df_inventory" not in st.session_state:
-    st.session_state.df_inventory = pd.DataFrame(columns=["Ngày cập nhật", "MÃ HÀNG", "Tồn kho thực tế"])
+# Lưu trữ lũy kế đơn hàng tổng hợp qua nhiều lần load file
+if "df_cumulative_orders" not in st.session_state:
+    st.session_state.df_cumulative_orders = pd.DataFrame()
 
-# Bộ nhớ tích hợp Lịch sử Đơn hàng (Gộp nhiều lần)
-if "df_orders_combined" not in st.session_state:
-    st.session_state.df_orders_combined = pd.DataFrame(columns=["SỐ LÔ", "MÃ HÀNG", "Ngày giao"])
-
-# Đếm số lần nạp file đơn hàng
-if "upload_count" not in st.session_state:
-    st.session_state.upload_count = 0
-
-# Nút Reset hệ thống trên Sidebar
-if st.sidebar.button("🗑️ reset lịch sử schedule"):
+# RESET
+if st.sidebar.button("🗑️ Reset Toàn Bộ Hệ Thống"):
     st.session_state.df_matrix_schedule = pd.DataFrame()
     st.session_state.df_raw_schedule_history = pd.DataFrame(
-        columns=["số máy", "date_obj", "số lô", "mã hàng", "năng suất", "seq"]
+        columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
-    st.session_state.df_inventory = pd.DataFrame(columns=["Ngày cập nhật", "MÃ HÀNG", "Tồn kho thực tế"])
-    st.session_state.df_orders_combined = pd.DataFrame(columns=["SỐ LÔ", "MÃ HÀNG", "Ngày giao"])
-    st.session_state.upload_count = 0
-    st.sidebar.success("đã xóa lịch cũ!")
+    st.session_state.df_cumulative_orders = pd.DataFrame()
+    st.sidebar.success("Đã xóa lịch sử lịch trình và đơn hàng tổng hợp!")
     st.rerun()
 
-
 # =========================
-# 2. INPUT & PROCESSING LOGIC
+# 2. INPUT & DATA PROCESSING
 # =========================
-st.sidebar.header("📥 TẢI DỮ LIỆU ĐẦU VÀO")
+st.sidebar.header("⚙ INPUT")
+uploaded_file = st.sidebar.file_uploader("📂 Load đơn hàng", type=["xlsx"])
+inventory_file = st.sidebar.file_uploader("📦 Load file tồn kho hàng ngày", type=["xlsx"])
 
-# ---------------------------------------------
-# YÊU CẦU 1: Nút tải file Tồn kho hàng ngày
-# ---------------------------------------------
-inv_file = st.sidebar.file_uploader("Chọn file TỒN KHO hàng ngày", type=["xlsx", "csv"])
-if inv_file:
+# Hàm xử lý file đơn hàng
+def load_orders(file):
+    if file is None:
+        return pd.DataFrame()
     try:
-        if inv_file.name.endswith(".xlsx"):
-            df_inv_in = pd.read_excel(inv_file)
-        else:
-            df_inv_in = pd.read_csv(inv_file)
-            
-        # Chuẩn hóa chuẩn tên cột theo ảnh mẫu
-        df_inv_in.columns = [str(c).strip() for c in df_inv_in.columns]
+        df = pd.read_excel(file, sheet_name="DonHang")
+        df["NGÀY GIAO"] = pd.to_datetime(df["NGÀY GIAO"], errors="coerce")
+        df["NGÀY ĐẶT HÀNG"] = pd.to_datetime(df["NGÀY ĐẶT HÀNG"], errors="coerce")
+        df["NĂNG SUẤT"] = pd.to_numeric(df["NĂNG SUẤT"], errors="coerce").fillna(0)
+        df["SL ĐẶT"] = pd.to_numeric(df["SL ĐẶT"], errors="coerce").fillna(0)
+        df["TỒN KHO"] = pd.to_numeric(df["TỒN KHO"], errors="coerce").fillna(0)
         
-        # Chuyển đổi cột Ngày cập nhật sang định dạng datetime để tính toán
-        if "Ngày cập nhật" in df_inv_in.columns:
-            df_inv_in["Ngày cập nhật"] = pd.to_datetime(df_inv_in["Ngày cập nhật"], errors='coerce')
-            
-        st.session_state.df_inventory = df_inv_in
-        st.sidebar.success("✅ Đã cập nhật file tồn kho!")
-    except Exception as e:
-        st.sidebar.error(f"Lỗi đọc file tồn kho: {e}")
-
-# ---------------------------------------------
-# YÊU CẦU 2: Tải và tổng hợp file đơn hàng
-# ---------------------------------------------
-order_file = st.sidebar.file_uploader("Chọn file ĐƠN HÀNG mới", type=["xlsx", "csv"])
-if order_file:
-    try:
-        if order_file.name.endswith(".xlsx"):
-            df_ord_in = pd.read_excel(order_file)
-        else:
-            df_ord_in = pd.read_csv(order_file)
-            
-        df_ord_in.columns = [str(c).strip() for c in df_ord_in.columns]
+        # Làm sạch chuỗi khóa
+        df["SỐ MÁY"] = df["SỐ MÁY"].astype(str).str.strip()
+        df["SỐ LÔ"] = df["SỐ LÔ"].astype(str).str.strip()
+        df["MÃ HÀNG"] = df["MÃ HÀNG"].astype(str).str.strip()
         
-        if "Ngày giao" in df_ord_in.columns:
-            df_ord_in["Ngày giao"] = pd.to_datetime(df_ord_in["Ngày giao"], errors='coerce')
-
-        if st.sidebar.button("💾 Xác nhận gộp đơn hàng"):
-            st.session_state.upload_count += 1
-            
-            if st.session_state.upload_count == 1:
-                st.session_state.df_orders_combined = df_ord_in
-            else:
-                # Gộp chung file cũ và file mới tải lên
-                df_merged = pd.concat([st.session_state.df_orders_combined, df_ord_in], ignore_index=True)
-                
-                # Loại bỏ trùng lặp, giữ lại ngày giao sớm nhất của lô/mã hàng đó
-                st.session_state.df_orders_combined = df_merged.groupby(["SỐ LÔ", "MÃ HÀNG"], as_index=False).agg({
-                    "Ngày giao": "min"
-                })
-            st.sidebar.success(f"✅ Đã gộp thành công! (Lần cập nhật: {st.session_state.upload_count})")
+        df = df.sort_values(["SỐ MÁY", "SỐ LÔ", "NGÀY ĐẶT HÀNG"], kind="stable")
+        return df
     except Exception as e:
         st.sidebar.error(f"Lỗi đọc file đơn hàng: {e}")
+        return pd.DataFrame()
 
+# Hàm xử lý file tồn kho
+def load_inventory(file):
+    if file is None:
+        return pd.DataFrame()
+    try:
+        # File tồn kho cần có tối thiểu các cột định danh tương tự đơn hàng để map
+        df_inv = pd.read_excel(file)
+        df_inv["SỐ MÁY"] = df_inv["SỐ MÁY"].astype(str).str.strip()
+        df_inv["SỐ LÔ"] = df_inv["SỐ LÔ"].astype(str).str.strip()
+        df_inv["MÃ HÀNG"] = df_inv["MÃ HÀNG"].astype(str).str.strip()
+        df_inv["TỒN KHO MỚI"] = pd.to_numeric(df_inv["TỒN KHO"], errors="coerce").fillna(0)
+        return df_inv[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "TỒN KHO MỚI"]]
+    except Exception as e:
+        st.sidebar.error(f"Lỗi đọc file tồn kho: {e}")
+        return pd.DataFrame()
 
-# ---------------------------------------------
-# LOGIC TÍNH TRẠNG THÁI TRỄ (THEO NGÀY CẬP NHẬT)
-# ---------------------------------------------
-df_status_display = pd.DataFrame()
+# BƯỚC 2.1: Xử lý Đơn hàng mới và gộp lũy kế (Yêu cầu số 2)
+df_current_upload = load_orders(uploaded_file)
 
-if not st.session_state.df_orders_combined.empty:
-    # Lấy thông tin đơn hàng gốc làm nền bảng phụ
-    df_status_display = st.session_state.df_orders_combined[["SỐ LÔ", "MÃ HÀNG", "Ngày giao"]].copy()
-    
-    # Kết nối dữ liệu với file tồn kho mới nhất thông qua MÃ HÀNG
-    if not st.session_state.df_inventory.empty:
-        df_status_display = pd.merge(
-            df_status_display, 
-            st.session_state.df_inventory[["MÃ HÀNG", "Ngày cập nhật", "Tồn kho thực tế"]], 
-            on="MÃ HÀNG", 
-            how="left"
-        )
+if not df_current_upload.empty:
+    if st.session_state.df_cumulative_orders.empty:
+        st.session_state.df_cumulative_orders = df_current_upload.copy()
     else:
-        df_status_display["Ngày cập nhật"] = pd.NaT
-        df_status_display["Tồn kho thực tế"] = 0
+        # Gộp file mới vào file cũ đã lưu trữ trước đó
+        combined = pd.concat([st.session_state.df_cumulative_orders, df_current_upload], ignore_index=True)
+        # Loại bỏ trùng lặp nếu trùng Khóa chính đơn hàng, giữ lại dòng mới cập nhật nhất
+        st.session_state.df_cumulative_orders = combined.drop_duplicates(
+            subset=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], keep="last"
+        ).reset_index(drop=True)
 
-    # Hàm tính số ngày trễ dựa trên mốc thời gian thực tế
-    def compute_delay_status(row):
-        # Nếu không có ngày cập nhật kho hoặc không có ngày giao, mặc định theo dõi tiếp
-        if pd.isna(row["Ngày giao"]) or pd.isna(row["Ngày cập nhật"]):
-            return "chưa xác định"
+# Gán biến làm việc chính là danh sách đơn hàng đã tích lũy tổng hợp
+df_orders = st.session_state.df_cumulative_orders.copy()
+
+# BƯỚC 2.2: Cập nhật Tồn kho hàng ngày nếu có file load lên (Yêu cầu số 1)
+df_inventory = load_inventory(inventory_file)
+if not df_inventory.empty and not df_orders.empty:
+    # Merge để lấy cột tồn kho mới cập nhật từ file hàng ngày
+    df_orders = pd.merge(df_orders, df_inventory, on=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], how="left")
+    # Nếu lô nào có tồn kho mới thì ghi đè, không có thì giữ nguyên giá trị tồn kho cũ
+    df_orders["TỒN KHO"] = df_orders["TỒN KHO MỚI"].fillna(df_orders["TỒN KHO"])
+    df_orders.drop(columns=["TỒN KHO MỚI"], inplace=True)
+    st.sidebar.success("🔄 Đã cập nhật Tồn kho mới vào hệ thống!")
+
+if df_orders.empty:
+    st.warning("⚠️ Chưa có dữ liệu đơn hàng. Vui lòng load file đơn hàng ở sidebar để bắt đầu.")
+    st.stop()
+
+# =========================
+# 3. GENERATE (APPEND-ONLY FIXED WITH CURRENT LOGIC)
+# =========================
+if st.button("🚀 Generate / Refresh Schedule"):
+
+    start_planning_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    old_df = st.session_state.df_raw_schedule_history.copy()
+
+    # =========================
+    # KEY FIX 1: lấy lịch cũ
+    # =========================
+    existing_keys = set()
+    machine_last_date = {}
+    machine_seq = {}
+
+    if not old_df.empty:
+        old_df["Date_Obj"] = pd.to_datetime(old_df["Date_Obj"])
+        old_df["SEQ"] = old_df["SEQ"].fillna(0).astype(int)
+
+        for _, r in old_df.iterrows():
+            key = (str(r["SỐ MÁY"]), str(r["SỐ LÔ"]), str(r["MÃ HÀNG"]))
+            existing_keys.add(key)
+
+            m = str(r["SỐ MÁY"])
+            machine_last_date[m] = max(machine_last_date.get(m, r["Date_Obj"]), r["Date_Obj"])
+            machine_seq[m] = max(machine_seq.get(m, 0), int(r["SEQ"]))
+
+        # tiếp nối ngày (KHÔNG gap)
+        for m in machine_last_date:
+            machine_last_date[m] = machine_last_date[m] + timedelta(days=1)
+
+    new_records = []
+
+    # =========================
+    # KEY FIX 2: CHỈ ADD ORDER MỚI HOẶC ORDER ĐÃ ĐƯỢC THAY ĐỔI TỒN KHO TÍNH TOÁN LẠI
+    # (Để nút Tồn kho chạy chuẩn xác, nếu trùng key nhưng tồn kho đổi -> vẫn cho chạy lại lịch phục thuộc logic gốc)
+    # =========================
+    for _, row in df_orders.iterrows():
+
+        machine = str(row["SỐ MÁY"])
+        lot = str(row["SỐ LÔ"])
+        item = str(row["MÃ HÀNG"])
+
+        if pd.isna(machine) or machine == "" or machine == "nan":
+            continue
+
+        key = (machine, lot, item)
+
+        # Nếu đơn hàng đã chạy rồi và không có file cập nhật mới thay đổi, giữ nguyên tránh overwrite lịch cũ
+        if key in existing_keys and inventory_file is None:
+            continue
             
-        # Tính khoảng lệch ngày: Ngày cập nhật kho thực tế trừ đi hạn Ngày giao đơn hàng
-        delta_days = (row["Ngày cập nhật"] - row["Ngày giao"]).days
-        
-        if delta_days > 0:
-            return f"trễ {delta_days} ngày"
-        else:
-            return "ok"
+        # Nếu có file tồn kho mới, xóa lịch cũ của đúng Lô đó trong old_df để tính toán lại ngày phân bổ mới
+        if key in existing_keys and inventory_file is not None:
+            old_df = old_df[~((old_df["SỐ MÁY"] == machine) & (old_df["SỐ LÔ"] == lot) & (old_df["MÃ HÀNG"] == item))]
 
-    df_status_display["TRẠNG THÁI"] = df_status_display.apply(compute_delay_status, axis=1)
-    
-    # Sắp xếp lại thứ tự cột hiển thị giống như giao diện mong muốn của bạn
-    df_status_display = df_status_display[["SỐ LÔ", "MÃ HÀNG", "TRẠNG THÁI"]]
+        qty_needed = max(0, row["SL ĐẶT"] - row["TỒN KHO"])
+        if qty_needed <= 0 or row["NĂNG SUẤT"] <= 0:
+            continue
 
+        if machine not in machine_last_date:
+            machine_last_date[machine] = start_planning_date
+
+        if machine not in machine_seq:
+            machine_seq[machine] = 0
+
+        days_needed = max(1, int(round(qty_needed / row["NĂNG SUẤT"])))
+
+        start_day = machine_last_date[machine]
+        start_seq = machine_seq[machine]
+
+        for d in range(days_needed):
+            new_records.append({
+                "SỐ MÁY": machine,
+                "Date_Obj": start_day + timedelta(days=d),
+                "SEQ": start_seq + d + 1,
+                "SỐ LÔ": lot,
+                "MÃ HÀNG": item,
+                "NĂNG SUẤT": int(row["NĂNG SUẤT"])
+            })
+
+        machine_last_date[machine] = start_day + timedelta(days=days_needed)
+        machine_seq[machine] = start_seq + days_needed
+
+    # =========================
+    # MERGE OLD + NEW (NO OVERWRITE)
+    # =========================
+    if new_records:
+        df_new = pd.DataFrame(new_records)
+        df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
+
+        df_all = pd.concat([old_df, df_new], ignore_index=True)
+    else:
+        df_all = old_df
+
+    df_all = df_all.sort_values(["SỐ MÁY", "SEQ"]).reset_index(drop=True)
+    st.session_state.df_raw_schedule_history = df_all.copy()
+
+    # =========================
+    # MATRIX BUILD
+    # =========================
+    final_rows = []
+
+    for machine_id, group in df_all.groupby("SỐ MÁY"):
+        group = group.sort_values("SEQ")
+
+        row_ngay = {"SỐ MÁY": machine_id, "Thuộc tính": "LỊCH"}
+        row_lo = {"SỐ MÁY": machine_id, "Thuộc tính": "SỐ LÔ"}
+        row_hang = {"SỐ MÁY": machine_id, "Thuộc tính": "MÃ HÀNG"}
+        row_ns = {"SỐ MÁY": machine_id, "Thuộc tính": "NS"}
+
+        for _, r in group.iterrows():
+            col = f"C{int(r['SEQ'])}"
+            row_ngay[col] = r["Date_Obj"].strftime("%d/%m")
+            row_lo[col] = r["SỐ LÔ"]
+            row_hang[col] = r["MÃ HÀNG"]
+            row_ns[col] = int(r["NĂNG SUẤT"])
+
+        final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
+
+    st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
+    st.success("🎉 Schedule updated (append mode)")
 
 # =========================
-# 3. DISPLAY ON DASHBOARD
+# 4. STYLE (BORDER + CENTER + PROFESSIONAL)
 # =========================
-col_left, col_right = st.columns([2, 1])
-
-with col_left:
-    st.subheader("📊 Tiến Độ Lịch Trình Sản Xuất (Chính)")
-    if not st.session_state.df_matrix_schedule.empty:
-        st.dataframe(st.session_state.df_matrix_schedule, use_container_width=True)
-    else:
-        st.info("Chưa có dữ liệu ma trận lịch trình gốc.")
-
-with col_right:
-    st.subheader("📋 TRẠNG THÁI TỪNG LÔ (Bảng Phụ)")
-    
-    # Hiển thị trạng thái gộp file
-    if st.session_state.upload_count >= 2:
-        st.info(f"🔄 Đang hiển thị dữ liệu tổng hợp từ {st.session_state.upload_count} lần cập nhật đơn hàng.")
-    
-    if not df_status_display.empty:
-        # Hàm tô màu cảnh báo trực quan cho ô trạng thái
-        def highlight_status(val):
-            if "trễ" in str(val):
-                return "background-color: #ffcccc; color: #cc0000; font-weight: bold;"
-            elif val == "ok":
-                return "background-color: #ccffcc; color: #006600; font-weight: bold;"
-            return ""
-
-        # Gộp nhóm hiển thị (Merge cells trực quan) theo SỐ LÔ giống thiết kế của bạn
-        df_sorted = df_status_display.sort_values(by=["SỐ LÔ", "MÃ HÀNG"])
-        styled_table = df_sorted.style.applymap(highlight_status, subset=["TRẠNG THÁI"])
-        
-        st.dataframe(styled_table, use_container_width=True, hide_index=True)
-    else:
-        st.warning("Vui lòng tải lên cả file đơn hàng và file tồn kho để tính toán trạng thái.")
+def style_matrix(df):
+    lot_colors = {}
+    values = df.values.flatten()
+    lots = [str(x) for x in values if str(x) not in ["nan", "None", "", "SỐ MÁY", "Thuộc tính"]]lots = list(dict.fromkeys(lots))cmap = plt.get_cmap("tab20")for i, lot in enumerate(lots):lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))def color_row(row):return [f"background-color: {lot_colors.get(str(v), '')}"if str(v) in lot_colors else ""for v in row]styled = df.style.apply(color_row, axis=1)styled = styled.set_table_styles([{"selector": "th","props": [("background-color", "#1f4e79"),("color", "white"),("border", "1px solid #333"),("text-align", "center"),("font-weight", "bold")]},{"selector": "td","props": [("border", "1px solid #ccc"),("text-align", "center"),("padding", "6px")]},{"selector": "table","props": [("border-collapse", "collapse"),("width", "100%")]}])return styled=========================5. DISPLAY & BẢNG PHỤ TRẠNG THÁI (Yêu cầu số 1 & 2)=========================Khởi tạo layout cột: Trái hiển thị Lịch Chính, Phải hiển thị Bảng phụ trạng thái đơn hàngcol_main, col_sub = st.columns([7, 3])with col_main:if not st.session_state.df_matrix_schedule.empty:st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")st.dataframe(style_matrix(st.session_state.df_matrix_schedule), use_container_width=True, hide_index=True)else:st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng bấm 'Generate / Refresh Schedule'.")with col_sub:st.subheader("📊 PHỤ: TRẠNG THÁI CHI TIẾT TỪNG LÔ")if not st.session_state.df_raw_schedule_history.empty and not df_orders.empty:df_history = st.session_state.df_raw_schedule_history.copy()# Tìm ngày chạy cuối cùng của từng Lô sản xuất dựa trên lịch đã xếpdf_end_date = df_history.groupby(["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], as_index=False)["Date_Obj"].max()df_end_date.rename(columns={"Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"}, inplace=True)# Gộp thông tin ngày giao từ bảng tổng hợp đơn hàng lũy kếdf_status = pd.merge(df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "SL ĐẶT", "TỒN KHO"]],df_end_date,on=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],how="left")# Hàm xác định trạng thái chi tiết dựa trên logic ngày và lượng tồn kho hàng ngàydef check_status(row):if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):if (row["SL ĐẶT"] - row["TỒN KHO"]) <= 0:return "🟢 Đủ Tồn Kho (OK)"return "⚪ Chưa sắp lịch"# So sánh ngày hoàn thành thực tế tính toán từ tiến độ và hạn giao hàngdate_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"]).date()date_delivery = pd.to_datetime(row["NGÀY GIAO"]).date() if not pd.isna(row["NGÀY GIAO"]) else Noneif date_delivery and date_real > date_delivery:return f"🔴 Trễ ({ (date_real - date_delivery).days } ngày)"else:return "🟢 Tiến độ OK"df_status["TRẠNG THÁI"] = df_status.apply(check_status, axis=1)# Định dạng ngày hiển thị cho dễ nhìndf_status["NGÀY GIAO"] = df_status["NGÀY GIAO"].dt.strftime('%d/%m/%Y').fillna("Chưa có")df_status["NGÀY HOÀN THÀNH THỰC TẾ"] = pd.to_datetime(df_status["NGÀY HOÀN THÀNH THỰC TẾ"]).dt.strftime('%d/%m/%Y').fillna("-")# Lọc bớt cột để bảng phụ tinh gọn dễ quản lý layoutdf_display_status = df_status[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "NGÀY HOÀN THÀNH THỰC TẾ", "TRẠNG THÁI"]]# Hàm đổ màu Highlight dòng Trễ/OK trực quan cho bảng phụdef style_status_rows(val):if "🔴" in str(val):return "background-color: #ffcccc; color: #cc0000; font-weight: bold;"elif "🟢" in str(val):return "background-color: #e2f0d9; color: #385723;"return ""styled_sub_table = df_display_status.style.applymap(style_status_rows, subset=["TRẠNG THÁI"]).set_table_styles([{"selector": "th", "props": [("background-color", "#2f5597"), ("color", "white"), ("font-weight", "bold")]},{"selector": "td", "props": [("border", "1px solid #ccc"), ("padding", "5px")]}])st.dataframe(styled_sub_table, use_container_width=True, hide_index=True)else:st.info("Hệ thống chưa có đủ lịch trình để phân tích trạng thái các lô.")
