@@ -6,24 +6,33 @@ import matplotlib.colors as mcolors
 from datetime import datetime, timedelta
 from io import BytesIO
 
-# ========================= #
-# 1. CONFIG #
-# ========================= #
+# =========================
+# 1. CONFIG
+# =========================
 st.set_page_config(page_title="Production Schedule", layout="wide")
 st.title("📅 PRODUCTION SCHEDULE DASHBOARD")
 st.markdown("""
 <style>
-.block-container { padding-top: 1rem; }
-h1 { font-size: 30px; }
+.block-container {
+    padding-top: 1rem;
+}
+h1 {
+    font-size: 30px;
+}
 /* TABLE STYLE GLOBAL */
-table { border-collapse: collapse !important; }
-td, th { text-align: center !important; vertical-align: middle !important; }
+table {
+    border-collapse: collapse !important;
+}
+td, th {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ========================= #
-# SESSION STATE #
-# ========================= #
+# =========================
+# SESSION STATE
+# =========================
 if "df_matrix_schedule" not in st.session_state:
     st.session_state.df_matrix_schedule = pd.DataFrame()
 if "df_raw_schedule_history" not in st.session_state:
@@ -44,9 +53,9 @@ if st.sidebar.button("🗑️ Reset Toàn Bộ Hệ Thống"):
     st.sidebar.success("Đã xóa lịch sử lịch trình và đơn hàng tổng hợp!")
     st.rerun()
 
-# ========================= #
-# 2. INPUT & DATA PROCESSING #
-# ========================= #
+# =========================
+# 2. INPUT & DATA PROCESSING
+# =========================
 st.sidebar.header("⚙ INPUT")
 uploaded_file = st.sidebar.file_uploader("📂 Load đơn hàng", type=["xlsx"])
 inventory_file = st.sidebar.file_uploader("📦 Load file tồn kho hàng ngày", type=["xlsx"])
@@ -95,7 +104,8 @@ if not df_current_upload.empty:
     else:
         combined = pd.concat([st.session_state.df_cumulative_orders, df_current_upload], ignore_index=True)
         st.session_state.df_cumulative_orders = combined.drop_duplicates(
-            subset=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], keep="last"
+            subset=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],
+            keep="last"
         ).reset_index(drop=True)
 
 # BƯỚC 2.2: Cập nhật Tồn kho hàng ngày nếu có file load lên
@@ -109,20 +119,21 @@ if not df_inventory.empty and not st.session_state.df_cumulative_orders.empty:
 
 # Gán biến làm việc chính là danh sách đơn hàng đã tích lũy tổng hợp
 df_orders = st.session_state.df_cumulative_orders.copy()
+
 if df_orders.empty:
     st.warning("⚠️ Chưa có dữ liệu đơn hàng. Vui lòng load file đơn hàng ở sidebar để bắt đầu.")
     st.stop()
 
-# ========================= #
-# 3. GENERATE (APPEND-ONLY FIXED WITH CURRENT LOGIC) #
-# ========================= #
+# =========================
+# 3. GENERATE (APPEND-ONLY FIXED WITH CURRENT LOGIC)
+# =========================
 if st.button("🚀 Generate / Refresh Schedule"):
     start_planning_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     old_df = st.session_state.df_raw_schedule_history.copy()
     
-    # ========================= #
-    # KEY FIX 1: lấy lịch cũ #
-    # ========================= #
+    # =========================
+    # KEY FIX 1: lấy lịch cũ
+    # =========================
     existing_keys = set()
     machine_last_date = {}
     machine_seq = {}
@@ -143,9 +154,9 @@ if st.button("🚀 Generate / Refresh Schedule"):
             
     new_records = []
     
-    # ========================= #
-    # KEY FIX 2: CHỈ ADD ORDER MỚI HOẶC ORDER ĐÃ ĐƯỢC THAY ĐỔI TỒN KHO TÍNH TOÁN LẠI #
-    # ========================= #
+    # =========================
+    # KEY FIX 2: CHỈ ADD ORDER MỚI HOẶC ORDER ĐÃ ĐƯỢC THAY ĐỔI TỒN KHO TÍNH TOÁN LẠI
+    # =========================
     for _, row in df_orders.iterrows():
         machine = str(row["SỐ MÁY"])
         lot = str(row["SỐ LÔ"])
@@ -186,43 +197,305 @@ if st.button("🚀 Generate / Refresh Schedule"):
                 "MÃ HÀNG": item,
                 "NĂNG SUẤT": int(row["NĂNG SUẤT"])
             })
+            
         machine_last_date[machine] = start_day + timedelta(days=days_needed)
         machine_seq[machine] = start_seq + days_needed
 
-    # ========================= #
-    # MERGE OLD + NEW (SỬA LỖI ĐOẠN CUỐI CỦA BẠN) #
-    # ========================= #
+    # =========================
+    # MERGE OLD + NEW (NO OVERWRITE)
+    # =========================
     if new_records:
-        df_new_generated = pd.DataFrame(new_records)
-        df_final_history = pd.concat([old_df, df_new_generated], ignore_index=True)
+        df_new = pd.DataFrame(new_records)
+        df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
+        df_all = pd.concat([old_df, df_new], ignore_index=True)
     else:
-        df_final_history = old_df
+        df_all = old_df
         
-    # Lưu lại lịch sử raw vào session state
-    st.session_state.df_raw_schedule_history = df_final_history.copy()
+    df_all = df_all.sort_values(["SỐ MÁY", "SEQ"]).reset_index(drop=True)
+    st.session_state.df_raw_schedule_history = df_all.copy()
     
-    # Tạo bảng Matrix hiển thị dạng Gantt/Pivot nếu có dữ liệu
-    if not df_final_history.empty:
-        df_final_history["Ngày"] = df_final_history["Date_Obj"].dt.strftime("%d/%m")
-        df_final_history["Thông Tin"] = "Lô: " + df_final_history["SỐ LÔ"] + "<br>Mã: " + df_final_history["MÃ HÀNG"]
+    # =========================
+    # MATRIX BUILD
+    # =========================
+    final_rows = []
+    for machine_id, group in df_all.groupby("SỐ MÁY"):
+        group = group.sort_values("SEQ")
+        row_ngay = {"SỐ MÁY": machine_id, "Thuộc tính": "LỊCH"}
+        row_lo = {"SỐ MÁY": machine_id, "Thuộc tính": "SỐ LÔ"}
+        row_hang = {"SỐ MÁY": machine_id, "Thuộc tính": "MÃ HÀNG"}
+        row_ns = {"SỐ MÁY": machine_id, "Thuộc tính": "NS"}
         
-        df_pivot = df_final_history.pivot_table(
-            index="SỐ MÁY",
-            columns="Ngày",
-            values="Thông Tin",
-            aggfunc=lambda x: " / ".join(x)
-        ).fillna("-")
+        for _, r in group.iterrows():
+            col = f"C{int(r['SEQ'])}"
+            row_ngay[col] = r["Date_Obj"].strftime("%d/%m")
+            row_lo[col] = r["SỐ LÔ"]
+            row_hang[col] = r["MÃ HÀNG"]
+            row_ns[col] = int(r["NĂNG SUẤT"])
+            
+        final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
         
-        st.session_state.df_matrix_schedule = df_pivot
-        st.success("🎉 Đã cập nhật và đồng bộ lịch trình thành công!")
-        st.rerun()
+    st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
+    st.success("🎉 Schedule updated (append mode)")
+# =========================
+# 4. STYLE (BORDER + CENTER + PROFESSIONAL)
+# =========================
+def style_matrix(df):
 
-# ========================= #
-# 4. DISPLAY VIEW #
-# ========================= #
-if not st.session_state.df_matrix_schedule.empty:
-    st.subheader("📊 BẢNG TIẾN ĐỘ SẢN XUẤT THEO MÁY")
-    # Hiển thị bảng dạng HTML cho phép xuống dòng <br> trong cell
-    st.write(st.session_state.df_matrix_schedule.to_html(escape=False), unsafe_allow_html=True)
-else:
-    st.info("💡 Hãy nhấn nút 'Generate / Refresh Schedule' để xây dựng ma trận phân lịch.")
+    lot_colors = {}
+    values = df.values.flatten()
+
+    lots = [
+        str(x) for x in values
+        if str(x) not in ["nan", "None", "", "SỐ MÁY", "Thuộc tính"]
+    ]
+
+    lots = list(dict.fromkeys(lots))
+
+    cmap = plt.get_cmap("tab20")
+
+    for i, lot in enumerate(lots):
+        lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))
+
+    def color_row(row):
+        return [
+            f"background-color: {lot_colors.get(str(v), '')}"
+            if str(v) in lot_colors else ""
+            for v in row
+        ]
+
+    styled = df.style.apply(color_row, axis=1)
+
+    styled = styled.set_table_styles([
+        {
+            "selector": "th",
+            "props": [
+                ("background-color", "#1f4e79"),
+                ("color", "white"),
+                ("border", "1px solid #333"),
+                ("text-align", "center"),
+                ("font-weight", "bold")
+            ]
+        },
+        {
+            "selector": "td",
+            "props": [
+                ("border", "1px solid #ccc"),
+                ("text-align", "center"),
+                ("padding", "6px")
+            ]
+        },
+        {
+            "selector": "table",
+            "props": [
+                ("border-collapse", "collapse"),
+                ("width", "100%")
+            ]
+        }
+    ])
+
+    return styled
+
+
+# =========================
+# 5. DISPLAY & BẢNG PHỤ TRẠNG THÁI
+# =========================
+
+col_main, col_sub = st.columns([2, 1])
+
+with col_main:
+
+    if not st.session_state.df_matrix_schedule.empty:
+
+        st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")
+
+        st.dataframe(
+            style_matrix(st.session_state.df_matrix_schedule),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    else:
+        st.info(
+            "Chưa có dữ liệu ma trận lịch trình. "
+            "Vui lòng bấm 'Generate / Refresh Schedule'."
+        )
+
+
+with col_sub:
+
+    st.subheader("📊 PHỤ: TRẠNG THÁI CHI TIẾT TỪNG LÔ")
+
+    if (
+        not st.session_state.df_raw_schedule_history.empty
+        and not df_orders.empty
+    ):
+
+        df_history = st.session_state.df_raw_schedule_history.copy()
+
+        df_end_date = (
+            df_history
+            .groupby(
+                ["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],
+                as_index=False
+            )["Date_Obj"]
+            .max()
+        )
+
+        df_end_date.rename(
+            columns={
+                "Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"
+            },
+            inplace=True
+        )
+
+
+        df_status = pd.merge(
+            df_orders[
+                [
+                    "SỐ MÁY",
+                    "SỐ LÔ",
+                    "MÃ HÀNG",
+                    "NGÀY GIAO",
+                    "SL ĐẶT",
+                    "TỒN KHO"
+                ]
+            ],
+            df_end_date,
+            on=[
+                "SỐ MÁY",
+                "SỐ LÔ",
+                "MÃ HÀNG"
+            ],
+            how="left"
+        )
+
+
+        def check_status(row):
+
+            if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):
+
+                if (
+                    row["SL ĐẶT"] - row["TỒN KHO"]
+                ) <= 0:
+                    return "🟢 Đủ Tồn Kho (OK)"
+
+                return "⚪ Chưa sắp lịch"
+
+
+            date_real = pd.to_datetime(
+                row["NGÀY HOÀN THÀNH THỰC TẾ"]
+            ).date()
+
+
+            date_delivery = (
+                pd.to_datetime(row["NGÀY GIAO"]).date()
+                if not pd.isna(row["NGÀY GIAO"])
+                else None
+            )
+
+
+            if date_delivery and date_real > date_delivery:
+
+                return (
+                    f"🔴 Lô {row['SỐ LÔ']} trễ "
+                    f"({(date_real - date_delivery).days} ngày)"
+                )
+
+            else:
+
+                return f"🟢 Lô {row['SỐ LÔ']} ok"
+
+
+
+        df_status["TRẠNG THÁI"] = df_status.apply(
+            check_status,
+            axis=1
+        )
+
+
+        df_status["NGÀY GIAO"] = (
+            df_status["NGÀY GIAO"]
+            .dt.strftime("%d/%m/%Y")
+            .fillna("Chưa có")
+        )
+
+
+        df_status["NGÀY HOÀN THÀNH THỰC TẾ"] = (
+            pd.to_datetime(
+                df_status["NGÀY HOÀN THÀNH THỰC TẾ"]
+            )
+            .dt.strftime("%d/%m/%Y")
+            .fillna("-")
+        )
+
+
+        df_display_status = df_status[
+            [
+                "SỐ MÁY",
+                "SỐ LÔ",
+                "MÃ HÀNG",
+                "TRẠNG THÁI"
+            ]
+        ]
+
+
+        def style_status_rows(val):
+
+            if "🔴" in str(val):
+                return (
+                    "background-color: #ffcccc;"
+                    "color: #cc0000;"
+                    "font-weight: bold;"
+                )
+
+            elif "🟢" in str(val):
+                return (
+                    "background-color: #e2f0d9;"
+                    "color: #385723;"
+                )
+
+            return ""
+
+
+        styled_sub_table = (
+            df_display_status.style
+            .apply(
+                lambda x: [
+                    style_status_rows(v)
+                    for v in x
+                ],
+                subset=["TRẠNG THÁI"]
+            )
+            .set_table_styles([
+                {
+                    "selector": "th",
+                    "props": [
+                        ("background-color", "#2f5597"),
+                        ("color", "white"),
+                        ("font-weight", "bold")
+                    ]
+                },
+                {
+                    "selector": "td",
+                    "props": [
+                        ("border", "1px solid #ccc"),
+                        ("padding", "5px")
+                    ]
+                }
+            ])
+        )
+
+
+        st.dataframe(
+            styled_sub_table,
+            use_container_width=True,
+            hide_index=True
+        )
+
+
+    else:
+
+        st.info(
+            "Hệ thống chưa có đủ lịch trình "
+            "để phân tích trạng thái các lô."
+        )
