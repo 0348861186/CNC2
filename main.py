@@ -224,29 +224,27 @@ if st.button("🚀 Generate / Refresh Schedule"):
     st.session_state.df_raw_schedule_history = df_all.copy()
 
     # =========================
-    # MATRIX BUILD
+    # MERGE OLD + NEW (NO OVERWRITE)
     # =========================
-    final_rows = []
+    if new_records:
+        df_new = pd.DataFrame(new_records)
+        df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
 
-    for machine_id, group in df_all.groupby("SỐ MÁY"):
-        group = group.sort_values("SEQ")
+        # Gộp lịch trình cũ (nếu có) và lịch trình mới tạo
+        if not old_df.empty:
+            df_combined = pd.concat([old_df, df_new], ignore_index=True)
+        else:
+            df_combined = df_new
+    else:
+        df_combined = old_df
 
-        row_ngay = {"SỐ MÁY": machine_id, "Thuộc tính": "LỊCH"}
-        row_lo = {"SỐ MÁY": machine_id, "Thuộc tính": "SỐ LÔ"}
-        row_hang = {"SỐ MÁY": machine_id, "Thuộc tính": "MÃ HÀNG"}
-        row_ns = {"SỐ MÁY": machine_id, "Thuộc tính": "NS"}
-
-        for _, r in group.iterrows():
-            col = f"C{int(r['SEQ'])}"
-            row_ngay[col] = r["Date_Obj"].strftime("%d/%m")
-            row_lo[col] = r["SỐ LÔ"]
-            row_hang[col] = r["MÃ HÀNG"]
-            row_ns[col] = int(r["NĂNG SUẤT"])
-
-        final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
-
-    st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
-    st.success("🎉 Schedule updated (append mode)")
+    # Sắp xếp lại dữ liệu theo Máy và Thứ tự chuỗi (SEQ) hoặc Ngày
+    if not df_combined.empty:
+        df_combined = df_combined.sort_values(["SỐ MÁY", "SEQ"], kind="stable").reset_index(drop=True)
+    
+    # Lưu lại vào session_state để hiển thị lên giao diện
+    st.session_state.df_raw_schedule_history = df_combined
+    st.success("🚀 Đã cập nhật và đồng bộ lịch trình thành công!")
 
 # =========================
 # 4. STYLE (BORDER + CENTER + PROFESSIONAL)
