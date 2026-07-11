@@ -48,7 +48,7 @@ if st.sidebar.button("🗑️ Reset Schedule History"):
     st.rerun()
 
 # =========================
-# INPUT (ĐÃ NÂNG CẤP THÊM NÚT LOAD FILE TỒN KHO)
+# INPUT
 # =========================
 st.sidebar.header("⚙ INPUT")
 uploaded_file = st.sidebar.file_uploader("📂 Upload Order File", type=["xlsx"])
@@ -73,20 +73,18 @@ def load_inventory(file):
     if file is None:
         return pd.DataFrame()
     df = pd.read_excel(file)
-    # Chuẩn hóa tên cột viết hoa loại bỏ khoảng trắng thừa để đối chiếu chính xác
     df.columns = [str(c).strip().upper() for c in df.columns]
     return df
 
 df_orders = load_orders(uploaded_file)
 df_inventory = load_inventory(uploaded_inventory)
 
-# Tự động cập nhật số lượng TỒN KHO mới từ file tồn kho vào danh sách đơn hàng (nếu có)
+# Tự động map dữ liệu TỒN KHO mới từ file upload vào df_orders
 if not df_orders.empty and not df_inventory.empty:
     inv_code_col = [c for c in df_inventory.columns if "MÃ HÀNG" in c or "MA HANG" in c]
     inv_qty_col = [c for c in df_inventory.columns if "TỒN KHO" in c or "TON KHO" in c or "SL" in c]
     
     if inv_code_col and inv_qty_col:
-        # Tạo từ điển map giữa Mã Hàng -> Số lượng tồn kho
         inv_map = df_inventory.set_index(inv_code_col[0])[inv_qty_col[0]].to_dict()
         df_orders["TỒN KHO"] = df_orders["MÃ HÀNG"].map(inv_map).fillna(df_orders["TỒN KHO"])
         df_orders["TỒN KHO"] = pd.to_numeric(df_orders["TỒN KHO"], errors="coerce").fillna(0)
@@ -96,12 +94,15 @@ if df_orders.empty:
     st.stop()
 
 # =========================
-# GENERATE (LOGIC GỐC KHÔNG ĐỔI)
+# AUTOMATIC GENERATE LOGIC 
+# (Tự động chạy lại khi upload file tồn kho hoặc bấm nút thủ công)
 # =========================
-if st.button("🚀 Generate / Refresh Schedule"):
+trigger_generate = st.button("🚀 Generate / Refresh Schedule Manually")
+
+# Điều kiện: Tự động tính khi có file đơn hàng HOẶC người dùng nhấn nút chạy thủ công
+if trigger_generate or (not df_orders.empty and st.session_state.df_matrix_schedule.empty):
 
     start_planning_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-
     old_df = st.session_state.df_raw_schedule_history.copy()
 
     existing_keys = set()
@@ -126,7 +127,6 @@ if st.button("🚀 Generate / Refresh Schedule"):
     new_records = []
 
     for _, row in df_orders.iterrows():
-
         machine = row["SỐ MÁY"]
         lot = row["SỐ LÔ"]
         item = row["MÃ HÀNG"]
@@ -135,7 +135,6 @@ if st.button("🚀 Generate / Refresh Schedule"):
             continue
 
         key = (machine, lot, item)
-
         if key in existing_keys:
             continue
 
@@ -150,7 +149,6 @@ if st.button("🚀 Generate / Refresh Schedule"):
             machine_seq[machine] = 0
 
         days_needed = max(1, int(round(qty_needed / row["NĂNG SUẤT"])))
-
         start_day = machine_last_date[machine]
         start_seq = machine_seq[machine]
 
@@ -178,9 +176,7 @@ if st.button("🚀 Generate / Refresh Schedule"):
     st.session_state.df_raw_schedule_history = df_all.copy()
 
     final_rows = []
-
     for machine_id, group in df_all.groupby("SỐ MÁY"):
-
         group = group.sort_values("SEQ")
 
         row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE"}
@@ -198,33 +194,31 @@ if st.button("🚀 Generate / Refresh Schedule"):
         final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
 
     st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
-    st.success("Schedule updated successfully")
+
+# Khi upload file tồn kho mới, xóa lịch ma trận cũ để ép hệ thống tái tính toán dựa trên tồn kho mới ngay lập tức
+if uploaded_inventory and trigger_generate is False:
+    st.session_state.df_matrix_schedule = pd.DataFrame()
+    st.session_state.df_raw_schedule_history = pd.DataFrame(columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"])
+    st.rerun()
 
 # =========================
 # STYLE (MACHINE + LOT COLOR FIXED)
 # =========================
 def style_matrix(df):
-
     cmap = plt.get_cmap("tab20")
-
     color_map = {}
     color_index = 0
 
     for machine in df["SỐ MÁY"].unique():
-
         lot_row = df[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT")]
-
         if lot_row.empty:
             continue
 
         for col in lot_row.columns:
             if col in ["SỐ MÁY", "Attribute"]:
                 continue
-
             lot = str(lot_row[col].values[0])
-
             key = (machine, lot)
-
             if lot not in ["nan", "None", ""]:
                 if key not in color_map:
                     color_map[key] = mcolors.rgb2hex(cmap(color_index % 20))
@@ -236,73 +230,39 @@ def style_matrix(df):
     def apply_color(row):
         machine = row["SỐ MÁY"]
         colors = []
-
         for col in row.index:
-
             if col in ["SỐ MÁY", "Attribute"]:
                 colors.append("")
                 continue
 
-            lot_val = df.loc[
-                (df["SỐ MÁY"] == machine) &
-                (df["Attribute"] == "LOT"),
-                col
-            ].values
-
+            lot_val = df.loc[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT"), col].values
             lot_val = str(lot_val[0]) if len(lot_val) > 0 else ""
-
             colors.append(f"background-color: {get_color(machine, lot_val)}")
-
         return colors
 
     styled = df.style.apply(apply_color, axis=1)
-
     styled = styled.set_table_styles([
-        {"selector": "th",
-         "props": [
-             ("background-color", "#1f4e79"),
-             ("color", "white"),
-             ("border", "1px solid #333"),
-             ("text-align", "center"),
-             ("font-weight", "bold")
-         ]},
-        {"selector": "td",
-         "props": [
-             ("border", "1px solid #ccc"),
-             ("text-align", "center"),
-             ("padding", "6px")
-         ]},
-        {"selector": "table",
-         "props": [
-             ("border-collapse", "collapse"),
-             ("width", "100%")
-         ]}
+        {"selector": "th", "props": [("background-color", "#1f4e79"), ("color", "white"), ("border", "1px solid #333"), ("text-align", "center"), ("font-weight", "bold")]},
+        {"selector": "td", "props": [("border", "1px solid #ccc"), ("text-align", "center"), ("padding", "6px")]},
+        {"selector": "table", "props": [("border-collapse", "collapse"), ("width", "100%")]}
     ])
-
     return styled
 
 # =========================
-# DISPLAY & BẢNG TRẠNG THÁI (ĐÃ NÂNG CẤP THEO YÊU CẦU 2)
+# DISPLAY & BẢNG TRẠNG THÁI TIẾN ĐỘ
 # =========================
 if not st.session_state.df_matrix_schedule.empty:
 
-    # --- XỬ LÝ BẢNG TRẠNG THÁI TIẾN ĐỘ ---
+    # --- BẢNG TRẠNG THÁI TIẾN ĐỘ TỰ ĐỘNG CẬP NHẬT ---
     st.subheader("⚠️ BẢNG TRẠNG THÁI TIẾN ĐỘ")
-    
     df_raw = st.session_state.df_raw_schedule_history
     
     if not df_raw.empty and not df_orders.empty:
-        # Lấy ngày hoàn thành thực tế cuối cùng (Max Date) cho từng Số Lô từ lịch sản xuất
         df_finish = df_raw.groupby("SỐ LÔ")["Date_Obj"].max().reset_index()
         df_finish.columns = ["SỐ LÔ", "NGÀY HOÀN THÀNH THỰC TẾ"]
         
-        # Kết hợp với thông tin đơn hàng để lấy Ngày Giao dự kiến gốc
         df_check = pd.merge(df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO"]].drop_duplicates("SỐ LÔ"), df_finish, on="SỐ LÔ", how="inner")
-        
-        # Tính số ngày trễ
         df_check["TRỄ (NGÀY)"] = (df_check["NGÀY HOÀN THÀNH THỰC TẾ"] - df_check["NGÀY GIAO"]).dt.days
-        
-        # Chỉ lọc ra các lô thực sự bị trễ tiến độ
         df_delay = df_check[df_check["TRỄ (NGÀY)"] > 0].copy()
         
         if not df_delay.empty:
@@ -316,7 +276,6 @@ if not st.session_state.df_matrix_schedule.empty:
                 hide_index=True
             )
         else:
-            # Nếu không có đơn nào bị trễ thì chỉ in dòng chữ thông báo duy nhất
             st.success("🎉 TẤT CẢ ĐƠN HÀNG KỊP XUẤT")
     else:
         st.info("Chưa có dữ liệu tiến độ để phân tích.")
@@ -325,7 +284,6 @@ if not st.session_state.df_matrix_schedule.empty:
 
     # --- HIỂN THỊ LỊCH SẢN XUẤT CHÍNH ---
     st.subheader("📅 Production Schedule")
-
     st.dataframe(
         style_matrix(st.session_state.df_matrix_schedule),
         use_container_width=True,
@@ -333,7 +291,6 @@ if not st.session_state.df_matrix_schedule.empty:
     )
 
     st.subheader("📥 Export Excel")
-
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
         st.session_state.df_matrix_schedule.to_excel(writer, index=False, sheet_name="Schedule")
