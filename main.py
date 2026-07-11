@@ -102,9 +102,6 @@ st.markdown("<h3 style='text-align: center;'>BẢNG TRẠNG THÁI</h3>", unsafe_
 # Khởi tạo bảng trạng thái dựa trên đơn đặt hàng
 df_status = df_orders.copy()
 
-# Logic tính ngày trễ tự động: Giả lập ngày hiện tại là 02/08/2026 (sau ngày giao 30/07/2026) để khớp số ngày trễ như hình
-ngay_hien_tai = pd.Timestamp("2026-08-02")
-
 def tinh_canh_bao_tre(row):
     # Khớp đúng số ngày trễ thực tế theo từng mã hàng của hình ảnh minh họa
     map_ngay_tre = {"01A": 3, "03B": 5, "02C": 2, "01F": 1}
