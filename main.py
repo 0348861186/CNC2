@@ -9,14 +9,21 @@ from io import BytesIO
 # =========================
 # 1. CONFIG
 # =========================
-st.set_page_config(page_title="production schedule", layout="wide")
-st.title("📅 production schedule dashboard")
+st.set_page_config(page_title="Production Schedule", layout="wide")
+st.title("📅 PRODUCTION SCHEDULE DASHBOARD")
+
 st.markdown("""
 <style>
-    .block-container { padding-top: 1rem; }
-    h1 { font-size: 30px; }
-    table { border-collapse: collapse !important; }
-    td, th { text-align: center !important; vertical-align: middle !important; }
+.block-container { padding-top: 1rem; }
+h1 { font-size: 30px; }
+
+table {
+    border-collapse: collapse !important;
+}
+td, th {
+    text-align: center !important;
+    vertical-align: middle !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -25,116 +32,316 @@ st.markdown("""
 # =========================
 if "df_matrix_schedule" not in st.session_state:
     st.session_state.df_matrix_schedule = pd.DataFrame()
+
 if "df_raw_schedule_history" not in st.session_state:
     st.session_state.df_raw_schedule_history = pd.DataFrame(
-        columns=["số máy", "date_obj", "số lô", "mã hàng", "năng suất", "seq"]
+        columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
 
-# reset
-if st.sidebar.button("🗑️ reset schedule history"):
+# RESET
+if st.sidebar.button("🗑️ Reset Schedule History"):
     st.session_state.df_matrix_schedule = pd.DataFrame()
     st.session_state.df_raw_schedule_history = pd.DataFrame(
-        columns=["số máy", "date_obj", "số lô", "mã hàng", "năng suất", "seq"]
+        columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
-    st.sidebar.success("schedule history cleared!")
+    st.sidebar.success("Schedule history cleared!")
     st.rerun()
 
 # =========================
 # INPUT
 # =========================
-st.sidebar.header("⚙ input")
-uploaded_file = st.sidebar.file_uploader("📂 upload order file", type=["xlsx"])
-
-# 1) THÊM NÚT LOAD FILE TỒN KHO VÀO SIDEBAR
-uploaded_inventory_file = st.sidebar.file_uploader("📦 load file tồn kho", type=["xlsx"])
+st.sidebar.header("⚙ INPUT")
+uploaded_file = st.sidebar.file_uploader("📂 Upload Order File", type=["xlsx"])
+uploaded_inventory = st.sidebar.file_uploader("📂 Upload Inventory File", type=["xlsx"])
 
 def load_orders(file):
     if file is None:
         return pd.DataFrame()
-    df = pd.read_excel(file, sheet_name="donhang")
-    # Viết tiếp đoạn code dở dang của bạn và chuẩn hóa định dạng dữ liệu
-    df["ngày giao"] = pd.to_datetime(df["ngày giao"])
-    df["mã hàng"] = df["mã hàng"].astype(str).str.strip()
+
+    df = pd.read_excel(file, sheet_name="DonHang")
+
+    df["NGÀY GIAO"] = pd.to_datetime(df["NGÀY GIAO"], errors="coerce")
+    df["NGÀY ĐẶT HÀNG"] = pd.to_datetime(df["NGÀY ĐẶT HÀNG"], errors="coerce")
+    df["NĂNG SUẤT"] = pd.to_numeric(df["NĂNG SUẤT"], errors="coerce").fillna(0)
+    df["SL ĐẶT"] = pd.to_numeric(df["SL ĐẶT"], errors="coerce").fillna(0)
+    df["TỒN KHO"] = pd.to_numeric(df["TỒN KHO"], errors="coerce").fillna(0)
+
+    df = df.sort_values(["SỐ MÁY", "SỐ LÔ", "NGÀY ĐẶT HÀNG"], kind="stable")
     return df
 
-# Hàm tự động load file tồn kho mới được tích hợp theo yêu cầu
 def load_inventory(file):
     if file is None:
         return pd.DataFrame()
-    df_inv = pd.read_excel(file, sheet_name="tonkho")
-    df_inv["mã hàng"] = df_inv["mã hàng"].astype(str).str.strip()
-    return df_inv
+    # Đọc file tồn kho (mặc định lấy sheet đầu tiên hoặc chỉ định sheet nếu cần)
+    df = pd.read_excel(file)
+    # Chuẩn hóa tên cột để dễ map dữ liệu
+    df.columns = [str(c).strip().upper() for c in df.columns]
+    return df
 
-# Đọc dữ liệu từ file upload thực tế
 df_orders = load_orders(uploaded_file)
-df_inventory = load_inventory(uploaded_inventory_file)
+df_inventory = load_inventory(uploaded_inventory)
 
-# --- KHỞI TẠO MOCKUP DỮ LIỆU ĐỂ HIỂN THỊ ĐÚNG THEO HÌNH ẢNH (KHI CHƯA UP FILE) ---
-if df_orders.empty and uploaded_file is None:
-    df_orders = pd.DataFrame({
-        "số lô": ["32F", "32F", "50G", "50G"],
-        "mã hàng": ["01A", "03B", "02C", "01F"],
-        "sl đặt":,
-        "ngày giao": [pd.Timestamp("2026-07-30")] * 4
-    })
+# Cập nhật TỒN KHO từ file mới tải lên nếu có
+if not df_orders.empty and not df_inventory.empty:
+    # Tìm cột Mã Hàng và Tồn Kho trong file tồn kho
+    inv_code_col = [c for c in df_inventory.columns if "MÃ HÀNG" in c or "MA HANG" in c]
+    inv_qty_col = [c for c in df_inventory.columns if "TỒN KHO" in c or "TON KHO" in c or "SL" in c]
+    
+    if inv_code_col and inv_qty_col:
+        inv_map = df_inventory.set_index(inv_code_col[0])[inv_qty_col[0]].to_dict()
+        df_orders["TỒN KHO"] = df_orders["MÃ HÀNG"].map(inv_map).fillna(df_orders["TỒN KHO"])
+        df_orders["TỒN KHO"] = pd.to_numeric(df_orders["TỒN KHO"], errors="coerce").fillna(0)
 
-if df_inventory.empty and uploaded_inventory_file is None:
-    df_inventory = pd.DataFrame({
-        "ngày cập nhật": [pd.Timestamp("2026-07-12")] * 4,
-        "mã hàng": ["01A", "03B", "02C", "01F"],
-        "sl tồn kho": [1000, 700, 900, 600]
-    })
+if df_orders.empty:
+    st.warning("No order data available.")
+    st.stop()
 
-# --- HIỂN THỊ BẢNG TỒN KHO ---
-st.markdown("<h3 style='text-align: center;'>BẢNG TỒN KHO</h3>", unsafe_allow_html=True)
-df_inventory_display = df_inventory.copy()
-if pd.api.types.is_datetime64_any_dtype(df_inventory_display["ngày cập nhật"]):
-    df_inventory_display["ngày cập nhật"] = df_inventory_display["ngày cập nhật"].dt.strftime("%d/%m/%Y")
+# =========================
+# GENERATE (LOGIC UNCHANGED)
+# =========================
+if st.button("🚀 Generate / Refresh Schedule"):
 
-# Chuyển tiêu đề hiển thị viết hoa đúng mẫu
-df_inventory_display.columns = ["Ngày cập nhật", "Mã hàng", "SL Tồn kho"]
-st.dataframe(df_inventory_display, use_container_width=True, hide_index=True)
+    start_planning_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
+    old_df = st.session_state.df_raw_schedule_history.copy()
 
-# --- XỬ LÝ VÀ TỰ ĐỘNG CẬP NHẬT SANG BẢNG TRẠNG THÁI ---
-st.markdown("<h3 style='text-align: center;'>BẢNG TRẠNG THÁI</h3>", unsafe_allow_html=True)
+    existing_keys = set()
+    machine_last_date = {}
+    machine_seq = {}
 
-# Khởi tạo bảng trạng thái dựa trên đơn đặt hàng
-df_status = df_orders.copy()
+    if not old_df.empty:
+        old_df["Date_Obj"] = pd.to_datetime(old_df["Date_Obj"])
+        old_df["SEQ"] = old_df["SEQ"].fillna(0).astype(int)
 
-def tinh_canh_bao_tre(row):
-    # Khớp đúng số ngày trễ thực tế theo từng mã hàng của hình ảnh minh họa
-    map_ngay_tre = {"01A": 3, "03B": 5, "02C": 2, "01F": 1}
-    so_ngay = map_ngay_tre.get(row["mã hàng"], 0)
-    if so_ngay > 0:
-        return f"Trễ {so_ngay} ngày"
-    return "Kịp tiến độ"
+        for _, r in old_df.iterrows():
+            key = (r["SỐ MÁY"], r["SỐ LÔ"], r["MÃ HÀNG"])
+            existing_keys.add(key)
 
-df_status["trạng thái"] = df_status.apply(tinh_canh_bao_tre, axis=1)
+            m = r["SỐ MÁY"]
+            machine_last_date[m] = max(machine_last_date.get(m, r["Date_Obj"]), r["Date_Obj"])
+            machine_seq[m] = max(machine_seq.get(m, 0), int(r["SEQ"]))
 
-# Tự động cập nhật số lượng tồn kho vào bảng trạng thái (Khớp dữ liệu 500, 400, 300, 400 từ ảnh mẫu)
-map_sl_ton_kho = {"01A": 500, "03B": 400, "02C": 300, "01F": 400}
-df_status["sl tồn kho"] = df_status["mã hàng"].map(map_sl_ton_kho)
+        for m in machine_last_date:
+            machine_last_date[m] = machine_last_date[m] + timedelta(days=1)
 
-# Định dạng hiển thị cột ngày giao dd/mm/yyyy
-df_status["ngày giao hiển thị"] = df_status["ngày giao"].dt.strftime("%d/%m/%Y")
+    new_records = []
 
-# Lọc các cột cần thiết và đổi tên tiêu đề in hoa chuẩn chỉnh theo hình ảnh
-df_final_view = df_status[["số lô", "mã hàng", "sl đặt", "sl tồn kho", "ngày giao hiển thị", "trạng thái"]]
-df_final_view.columns = ["Số lô", "Mã hàng", "SL Đặt", "SL Tồn kho", "NGÀY GIAO", "TRẠNG THÁI"]
+    for _, row in df_orders.iterrows():
 
+        machine = row["SỐ MÁY"]
+        lot = row["SỐ LÔ"]
+        item = row["MÃ HÀNG"]
 
-# 2) KIỂM TRA ĐIỀU KIỆN LỌC CẢNH BÁO TRỄ HOẶC HIỂN THỊ THÔNG BÁO KỊP XUẤT TRONG BẢNG
-co_lo_bi_tre = df_final_view["TRẠNG THÁI"].str.contains("Trễ").any()
+        if pd.isna(machine) or machine == "":
+            continue
 
-if co_lo_bi_tre:
-    # Bảng trạng thái chỉ hiển thị/cảnh báo với các lô bị trễ
-    df_chi_lo_tre = df_final_view[df_final_view["TRẠNG THÁI"].str.contains("Trễ")]
-    st.dataframe(df_chi_lo_tre, use_container_width=True, hide_index=True)
-else:
-    # Nếu tất cả không vấn đề gì thì thể hiện trong bảng là "tất cả đơn hàng kịp xuất"
-    df_kip_xuat = pd.DataFrame([{
-        "Số lô": "-", "Mã hàng": "-", "SL Đặt": "-", "SL Tồn kho": "-", "NGÀY GIAO": "-",
-        "TRẠNG THÁI": "tất cả đơn hàng kịp xuất"
-    }])
-    st.dataframe(df_kip_xuat, use_container_width=True, hide_index=True)
+        key = (machine, lot, item)
+
+        if key in existing_keys:
+            continue
+
+        qty_needed = max(0, row["SL ĐẶT"] - row["TỒN KHO"])
+        if qty_needed <= 0 or row["NĂNG SUẤT"] <= 0:
+            continue
+
+        if machine not in machine_last_date:
+            machine_last_date[machine] = start_planning_date
+
+        if machine not in machine_seq:
+            machine_seq[machine] = 0
+
+        days_needed = max(1, int(round(qty_needed / row["NĂNG SUẤT"])))
+
+        start_day = machine_last_date[machine]
+        start_seq = machine_seq[machine]
+
+        for d in range(days_needed):
+            new_records.append({
+                "SỐ MÁY": machine,
+                "Date_Obj": start_day + timedelta(days=d),
+                "SEQ": start_seq + d + 1,
+                "SỐ LÔ": lot,
+                "MÃ HÀNG": item,
+                "NĂNG SUẤT": int(row["NĂNG SUẤT"])
+            })
+
+        machine_last_date[machine] = start_day + timedelta(days=days_needed)
+        machine_seq[machine] = start_seq + days_needed
+
+    if new_records:
+        df_new = pd.DataFrame(new_records)
+        df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
+        df_all = pd.concat([old_df, df_new], ignore_index=True)
+    else:
+        df_all = old_df
+
+    df_all = df_all.sort_values(["SỐ MÁY", "SEQ"]).reset_index(drop=True)
+    st.session_state.df_raw_schedule_history = df_all.copy()
+
+    final_rows = []
+
+    for machine_id, group in df_all.groupby("SỐ MÁY"):
+
+        group = group.sort_values("SEQ")
+
+        row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE"}
+        row_lo = {"SỐ MÁY": machine_id, "Attribute": "LOT"}
+        row_hang = {"SỐ MÁY": machine_id, "Attribute": "ITEM"}
+        row_ns = {"SỐ MÁY": machine_id, "Attribute": "OUTPUT"}
+
+        for _, r in group.iterrows():
+            col = f"C{int(r['SEQ'])}"
+            row_ngay[col] = r["Date_Obj"].strftime("%d/%m")
+            row_lo[col] = r["SỐ LÔ"]
+            row_hang[col] = r["MÃ HÀNG"]
+            row_ns[col] = int(r["NĂNG SUẤT"])
+
+        final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
+
+    st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
+    st.success("Schedule updated successfully")
+
+# =========================
+# STYLE (MACHINE + LOT COLOR FIXED)
+# =========================
+def style_matrix(df):
+
+    cmap = plt.get_cmap("tab20")
+
+    color_map = {}
+    color_index = 0
+
+    for machine in df["SỐ MÁY"].unique():
+
+        lot_row = df[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT")]
+
+        if lot_row.empty:
+            continue
+
+        for col in lot_row.columns:
+            if col in ["SỐ MÁY", "Attribute"]:
+                continue
+
+            lot = str(lot_row[col].values[0])
+
+            key = (machine, lot)
+
+            if lot not in ["nan", "None", ""]:
+                if key not in color_map:
+                    color_map[key] = mcolors.rgb2hex(cmap(color_index % 20))
+                    color_index += 1
+
+    def get_color(machine, lot):
+        return color_map.get((machine, str(lot)), "")
+
+    def apply_color(row):
+        machine = row["SỐ MÁY"]
+        colors = []
+
+        for col in row.index:
+
+            if col in ["SỐ MÁY", "Attribute"]:
+                colors.append("")
+                continue
+
+            lot_val = df.loc[
+                (df["SỐ MÁY"] == machine) &
+                (df["Attribute"] == "LOT"),
+                col
+            ].values
+
+            lot_val = str(lot_val[0]) if len(lot_val) > 0 else ""
+
+            colors.append(f"background-color: {get_color(machine, lot_val)}")
+
+        return colors
+
+    styled = df.style.apply(apply_color, axis=1)
+
+    styled = styled.set_table_styles([
+        {"selector": "th",
+         "props": [
+             ("background-color", "#1f4e79"),
+             ("color", "white"),
+             ("border", "1px solid #333"),
+             ("text-align", "center"),
+             ("font-weight", "bold")
+         ]},
+        {"selector": "td",
+         "props": [
+             ("border", "1px solid #ccc"),
+             ("text-align", "center"),
+             ("padding", "6px")
+         ]},
+        {"selector": "table",
+         "props": [
+             ("border-collapse", "collapse"),
+             ("width", "100%")
+         ]}
+    ])
+
+    return styled
+
+# =========================
+# DISPLAY & DELAY STATUS
+# =========================
+if not st.session_state.df_matrix_schedule.empty:
+
+    # --- PHẦN XỬ LÝ BẢNG TRẠNG THÁI CẢNH BÁO TRỄ ---
+    st.subheader("⚠️ BẢNG TRẠNG THÁI TIẾN ĐỘ")
+    
+    df_raw = st.session_state.df_raw_schedule_history
+    delay_records = []
+
+    if not df_raw.empty and not df_orders.empty:
+        # Tính ngày hoàn thành lớn nhất (Max Date) của từng Số Lô dựa trên lịch vừa chạy
+        df_finish_dates = df_raw.groupby("SỐ LÔ")["Date_Obj"].max().reset_index()
+        df_finish_dates.columns = ["SỐ LÔ", "NGÀY HOÀN THÀNH THỰC TẾ"]
+        
+        # Merge với thông tin ngày giao gốc từ Đơn hàng
+        df_status_check = pd.merge(df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO"]].drop_duplicates("SỐ LÔ"), df_finish_dates, on="SỐ LÔ", how="inner")
+        
+        # Lọc ra các lô bị trễ (Ngày hoàn thành thực tế > Ngày Giao)
+        df_status_check["TRỄ (NGÀY)"] = (df_status_check["NGÀY HOÀN THÀNH THỰC TẾ"] - df_status_check["NGÀY GIAO"]).dt.days
+        df_delay = df_status_check[df_status_check["TRỄ (NGÀY)"] > 0].copy()
+        
+        if not df_delay.empty:
+            # Định dạng ngày hiển thị dd/mm/yyyy
+            df_delay["NGÀY GIAO"] = df_delay["NGÀY GIAO"].dt.strftime("%d/%m/%Y")
+            df_delay["NGÀY HOÀN THÀNH THỰC TẾ"] = df_delay["NGÀY HOÀN THÀNH THỰC TẾ"].dt.strftime("%d/%m/%Y")
+            
+            # Cấu hình hiển thị bảng cảnh báo trễ
+            st.error("🚨 PHÁT HIỆN CÁC LÔ HÀNG BỊ TRỄ TIẾN ĐỘ XUẤT HÀNG LÀM THEO KẾ HOẠCH MỚI")
+            st.dataframe(
+                df_delay[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "NGÀY HOÀN THÀNH THỰC TẾ", "TRỄ (NGÀY)"]],
+                use_container_width=True,
+                hide_index=True
+            )
+        else:
+            st.success("🎉 TẤT CẢ ĐƠN HÀNG KỊP XUẤT")
+    else:
+        st.info("Chưa có dữ liệu để đánh giá trạng thái tiến độ.")
+
+    st.markdown("---")
+
+    # --- HIỂN THỊ LỊCH SẢN XUẤT CHÍNH ---
+    st.subheader("📅 Production Schedule")
+
+    st.dataframe(
+        style_matrix(st.session_state.df_matrix_schedule),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.subheader("📥 Export Excel")
+
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        st.session_state.df_matrix_schedule.to_excel(writer, index=False, sheet_name="Schedule")
+
+    st.download_button(
+        "💾 Download Excel",
+        data=output.getvalue(),
+        file_name=f"Production_Schedule_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
