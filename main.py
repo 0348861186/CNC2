@@ -17,7 +17,6 @@ st.markdown("""
 .block-container { padding-top: 1rem; }
 h1 { font-size: 30px; }
 
-/* TABLE STYLE GLOBAL */
 table {
     border-collapse: collapse !important;
 }
@@ -40,19 +39,19 @@ if "df_raw_schedule_history" not in st.session_state:
     )
 
 # RESET
-if st.sidebar.button("🗑️ Reset Lịch Sử Schedule"):
+if st.sidebar.button("🗑️ Reset Schedule History"):
     st.session_state.df_matrix_schedule = pd.DataFrame()
     st.session_state.df_raw_schedule_history = pd.DataFrame(
         columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
-    st.sidebar.success("Đã xóa lịch cũ!")
+    st.sidebar.success("Schedule history cleared!")
     st.rerun()
 
 # =========================
-# 2. INPUT
+# INPUT
 # =========================
 st.sidebar.header("⚙ INPUT")
-uploaded_file = st.sidebar.file_uploader("📂 Load đơn hàng", type=["xlsx"])
+uploaded_file = st.sidebar.file_uploader("📂 Upload Order File", type=["xlsx"])
 
 def load_orders(file):
     if file is None:
@@ -72,11 +71,11 @@ def load_orders(file):
 df_orders = load_orders(uploaded_file)
 
 if df_orders.empty:
-    st.warning("Chưa có dữ liệu đơn hàng.")
+    st.warning("No order data available.")
     st.stop()
 
 # =========================
-# 3. GENERATE (APPEND-ONLY FIXED)
+# GENERATE (LOGIC UNCHANGED)
 # =========================
 if st.button("🚀 Generate / Refresh Schedule"):
 
@@ -84,9 +83,6 @@ if st.button("🚀 Generate / Refresh Schedule"):
 
     old_df = st.session_state.df_raw_schedule_history.copy()
 
-    # =========================
-    # KEY FIX 1: lấy lịch cũ
-    # =========================
     existing_keys = set()
     machine_last_date = {}
     machine_seq = {}
@@ -103,15 +99,11 @@ if st.button("🚀 Generate / Refresh Schedule"):
             machine_last_date[m] = max(machine_last_date.get(m, r["Date_Obj"]), r["Date_Obj"])
             machine_seq[m] = max(machine_seq.get(m, 0), int(r["SEQ"]))
 
-        # tiếp nối ngày (KHÔNG gap)
         for m in machine_last_date:
             machine_last_date[m] = machine_last_date[m] + timedelta(days=1)
 
     new_records = []
 
-    # =========================
-    # KEY FIX 2: CHỈ ADD ORDER MỚI
-    # =========================
     for _, row in df_orders.iterrows():
 
         machine = row["SỐ MÁY"]
@@ -123,7 +115,6 @@ if st.button("🚀 Generate / Refresh Schedule"):
 
         key = (machine, lot, item)
 
-        # ❌ đã có trong lịch → bỏ qua (KHÔNG regenerate)
         if key in existing_keys:
             continue
 
@@ -155,34 +146,26 @@ if st.button("🚀 Generate / Refresh Schedule"):
         machine_last_date[machine] = start_day + timedelta(days=days_needed)
         machine_seq[machine] = start_seq + days_needed
 
-    # =========================
-    # MERGE OLD + NEW (NO OVERWRITE)
-    # =========================
     if new_records:
         df_new = pd.DataFrame(new_records)
         df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
-
         df_all = pd.concat([old_df, df_new], ignore_index=True)
     else:
         df_all = old_df
 
     df_all = df_all.sort_values(["SỐ MÁY", "SEQ"]).reset_index(drop=True)
-
     st.session_state.df_raw_schedule_history = df_all.copy()
 
-    # =========================
-    # MATRIX BUILD
-    # =========================
     final_rows = []
 
     for machine_id, group in df_all.groupby("SỐ MÁY"):
 
         group = group.sort_values("SEQ")
 
-        row_ngay = {"SỐ MÁY": machine_id, "Thuộc tính": "LỊCH"}
-        row_lo = {"SỐ MÁY": machine_id, "Thuộc tính": "SỐ LÔ"}
-        row_hang = {"SỐ MÁY": machine_id, "Thuộc tính": "MÃ HÀNG"}
-        row_ns = {"SỐ MÁY": machine_id, "Thuộc tính": "NS"}
+        row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE"}
+        row_lo = {"SỐ MÁY": machine_id, "Attribute": "LOT"}
+        row_hang = {"SỐ MÁY": machine_id, "Attribute": "ITEM"}
+        row_ns = {"SỐ MÁY": machine_id, "Attribute": "OUTPUT"}
 
         for _, r in group.iterrows():
             col = f"C{int(r['SEQ'])}"
@@ -194,32 +177,64 @@ if st.button("🚀 Generate / Refresh Schedule"):
         final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
 
     st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
-    st.success("🎉 Schedule updated (append mode)")
+    st.success("Schedule updated successfully")
 
 # =========================
-# 4. STYLE (BORDER + CENTER + PROFESSIONAL)
+# STYLE (MACHINE + LOT COLOR FIXED)
 # =========================
 def style_matrix(df):
 
-    lot_colors = {}
-
-    values = df.values.flatten()
-    lots = [str(x) for x in values if str(x) not in ["nan", "None", "", "SỐ MÁY", "Thuộc tính"]]
-    lots = list(dict.fromkeys(lots))
-
     cmap = plt.get_cmap("tab20")
 
-    for i, lot in enumerate(lots):
-        lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))
+    color_map = {}
+    color_index = 0
 
-    def color_row(row):
-        return [
-            f"background-color: {lot_colors.get(str(v), '')}"
-            if str(v) in lot_colors else ""
-            for v in row
-        ]
+    for machine in df["SỐ MÁY"].unique():
 
-    styled = df.style.apply(color_row, axis=1)
+        lot_row = df[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT")]
+
+        if lot_row.empty:
+            continue
+
+        for col in lot_row.columns:
+            if col in ["SỐ MÁY", "Attribute"]:
+                continue
+
+            lot = str(lot_row[col].values[0])
+
+            key = (machine, lot)
+
+            if lot not in ["nan", "None", ""]:
+                if key not in color_map:
+                    color_map[key] = mcolors.rgb2hex(cmap(color_index % 20))
+                    color_index += 1
+
+    def get_color(machine, lot):
+        return color_map.get((machine, str(lot)), "")
+
+    def apply_color(row):
+        machine = row["SỐ MÁY"]
+        colors = []
+
+        for col in row.index:
+
+            if col in ["SỐ MÁY", "Attribute"]:
+                colors.append("")
+                continue
+
+            lot_val = df.loc[
+                (df["SỐ MÁY"] == machine) &
+                (df["Attribute"] == "LOT"),
+                col
+            ].values
+
+            lot_val = str(lot_val[0]) if len(lot_val) > 0 else ""
+
+            colors.append(f"background-color: {get_color(machine, lot_val)}")
+
+        return colors
+
+    styled = df.style.apply(apply_color, axis=1)
 
     styled = styled.set_table_styles([
         {"selector": "th",
@@ -246,11 +261,11 @@ def style_matrix(df):
     return styled
 
 # =========================
-# 5. DISPLAY
+# DISPLAY
 # =========================
 if not st.session_state.df_matrix_schedule.empty:
 
-    st.subheader("🗓️ LỊCH SẢN XUẤT")
+    st.subheader("📅 Production Schedule")
 
     st.dataframe(
         style_matrix(st.session_state.df_matrix_schedule),
@@ -258,17 +273,15 @@ if not st.session_state.df_matrix_schedule.empty:
         hide_index=True
     )
 
-    st.subheader("📥 Xuất Excel")
+    st.subheader("📥 Export Excel")
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        st.session_state.df_matrix_schedule.to_excel(writer, index=False, sheet_name="LichSanXuat")
+        st.session_state.df_matrix_schedule.to_excel(writer, index=False, sheet_name="Schedule")
 
     st.download_button(
-        "💾 Tải Excel",
+        "💾 Download Excel",
         data=output.getvalue(),
-        file_name=f"Lich_San_Xuat_{datetime.now().strftime('%Y%m%d')}.xlsx",
+        file_name=f"Production_Schedule_{datetime.now().strftime('%Y%m%d')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
-
-
