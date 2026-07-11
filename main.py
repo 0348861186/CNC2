@@ -48,7 +48,7 @@ if st.sidebar.button("🗑️ Reset Schedule History"):
     st.rerun()
 
 # =========================
-# INPUT
+# INPUT (ĐÃ NÂNG CẤP THÊM NÚT LOAD FILE TỒN KHO)
 # =========================
 st.sidebar.header("⚙ INPUT")
 uploaded_file = st.sidebar.file_uploader("📂 Upload Order File", type=["xlsx"])
@@ -72,22 +72,21 @@ def load_orders(file):
 def load_inventory(file):
     if file is None:
         return pd.DataFrame()
-    # Đọc file tồn kho (mặc định lấy sheet đầu tiên hoặc chỉ định sheet nếu cần)
     df = pd.read_excel(file)
-    # Chuẩn hóa tên cột để dễ map dữ liệu
+    # Chuẩn hóa tên cột viết hoa loại bỏ khoảng trắng thừa để đối chiếu chính xác
     df.columns = [str(c).strip().upper() for c in df.columns]
     return df
 
 df_orders = load_orders(uploaded_file)
 df_inventory = load_inventory(uploaded_inventory)
 
-# Cập nhật TỒN KHO từ file mới tải lên nếu có
+# Tự động cập nhật số lượng TỒN KHO mới từ file tồn kho vào danh sách đơn hàng (nếu có)
 if not df_orders.empty and not df_inventory.empty:
-    # Tìm cột Mã Hàng và Tồn Kho trong file tồn kho
     inv_code_col = [c for c in df_inventory.columns if "MÃ HÀNG" in c or "MA HANG" in c]
     inv_qty_col = [c for c in df_inventory.columns if "TỒN KHO" in c or "TON KHO" in c or "SL" in c]
     
     if inv_code_col and inv_qty_col:
+        # Tạo từ điển map giữa Mã Hàng -> Số lượng tồn kho
         inv_map = df_inventory.set_index(inv_code_col[0])[inv_qty_col[0]].to_dict()
         df_orders["TỒN KHO"] = df_orders["MÃ HÀNG"].map(inv_map).fillna(df_orders["TỒN KHO"])
         df_orders["TỒN KHO"] = pd.to_numeric(df_orders["TỒN KHO"], errors="coerce").fillna(0)
@@ -97,7 +96,7 @@ if df_orders.empty:
     st.stop()
 
 # =========================
-# GENERATE (LOGIC UNCHANGED)
+# GENERATE (LOGIC GỐC KHÔNG ĐỔI)
 # =========================
 if st.button("🚀 Generate / Refresh Schedule"):
 
@@ -283,34 +282,33 @@ def style_matrix(df):
     return styled
 
 # =========================
-# DISPLAY & DELAY STATUS
+# DISPLAY & BẢNG TRẠNG THÁI (ĐÃ NÂNG CẤP THEO YÊU CẦU 2)
 # =========================
 if not st.session_state.df_matrix_schedule.empty:
 
-    # --- PHẦN XỬ LÝ BẢNG TRẠNG THÁI CẢNH BÁO TRỄ ---
+    # --- XỬ LÝ BẢNG TRẠNG THÁI TIẾN ĐỘ ---
     st.subheader("⚠️ BẢNG TRẠNG THÁI TIẾN ĐỘ")
     
     df_raw = st.session_state.df_raw_schedule_history
-    delay_records = []
-
+    
     if not df_raw.empty and not df_orders.empty:
-        # Tính ngày hoàn thành lớn nhất (Max Date) của từng Số Lô dựa trên lịch vừa chạy
-        df_finish_dates = df_raw.groupby("SỐ LÔ")["Date_Obj"].max().reset_index()
-        df_finish_dates.columns = ["SỐ LÔ", "NGÀY HOÀN THÀNH THỰC TẾ"]
+        # Lấy ngày hoàn thành thực tế cuối cùng (Max Date) cho từng Số Lô từ lịch sản xuất
+        df_finish = df_raw.groupby("SỐ LÔ")["Date_Obj"].max().reset_index()
+        df_finish.columns = ["SỐ LÔ", "NGÀY HOÀN THÀNH THỰC TẾ"]
         
-        # Merge với thông tin ngày giao gốc từ Đơn hàng
-        df_status_check = pd.merge(df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO"]].drop_duplicates("SỐ LÔ"), df_finish_dates, on="SỐ LÔ", how="inner")
+        # Kết hợp với thông tin đơn hàng để lấy Ngày Giao dự kiến gốc
+        df_check = pd.merge(df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO"]].drop_duplicates("SỐ LÔ"), df_finish, on="SỐ LÔ", how="inner")
         
-        # Lọc ra các lô bị trễ (Ngày hoàn thành thực tế > Ngày Giao)
-        df_status_check["TRỄ (NGÀY)"] = (df_status_check["NGÀY HOÀN THÀNH THỰC TẾ"] - df_status_check["NGÀY GIAO"]).dt.days
-        df_delay = df_status_check[df_status_check["TRỄ (NGÀY)"] > 0].copy()
+        # Tính số ngày trễ
+        df_check["TRỄ (NGÀY)"] = (df_check["NGÀY HOÀN THÀNH THỰC TẾ"] - df_check["NGÀY GIAO"]).dt.days
+        
+        # Chỉ lọc ra các lô thực sự bị trễ tiến độ
+        df_delay = df_check[df_check["TRỄ (NGÀY)"] > 0].copy()
         
         if not df_delay.empty:
-            # Định dạng ngày hiển thị dd/mm/yyyy
             df_delay["NGÀY GIAO"] = df_delay["NGÀY GIAO"].dt.strftime("%d/%m/%Y")
             df_delay["NGÀY HOÀN THÀNH THỰC TẾ"] = df_delay["NGÀY HOÀN THÀNH THỰC TẾ"].dt.strftime("%d/%m/%Y")
             
-            # Cấu hình hiển thị bảng cảnh báo trễ
             st.error("🚨 PHÁT HIỆN CÁC LÔ HÀNG BỊ TRỄ TIẾN ĐỘ XUẤT HÀNG LÀM THEO KẾ HOẠCH MỚI")
             st.dataframe(
                 df_delay[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "NGÀY HOÀN THÀNH THỰC TẾ", "TRỄ (NGÀY)"]],
@@ -318,9 +316,10 @@ if not st.session_state.df_matrix_schedule.empty:
                 hide_index=True
             )
         else:
+            # Nếu không có đơn nào bị trễ thì chỉ in dòng chữ thông báo duy nhất
             st.success("🎉 TẤT CẢ ĐƠN HÀNG KỊP XUẤT")
     else:
-        st.info("Chưa có dữ liệu để đánh giá trạng thái tiến độ.")
+        st.info("Chưa có dữ liệu tiến độ để phân tích.")
 
     st.markdown("---")
 
