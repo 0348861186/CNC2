@@ -216,21 +216,6 @@ if st.button("🚀 Generate / Refresh Schedule"):
         df_new = pd.DataFrame(new_records)
         df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
 
-        df_all = pd.concat([old_df, df_new], ignore_index=True)
-    else:
-        df_all = old_df
-
-    df_all = df_all.sort_values(["SỐ MÁY", "SEQ"]).reset_index(drop=True)
-    st.session_state.df_raw_schedule_history = df_all.copy()
-
-    # =========================
-    # MERGE OLD + NEW (NO OVERWRITE)
-    # =========================
-    if new_records:
-        df_new = pd.DataFrame(new_records)
-        df_new["Date_Obj"] = pd.to_datetime(df_new["Date_Obj"])
-
-        # Gộp lịch trình cũ (nếu có) và lịch trình mới tạo
         if not old_df.empty:
             df_combined = pd.concat([old_df, df_new], ignore_index=True)
         else:
@@ -238,274 +223,31 @@ if st.button("🚀 Generate / Refresh Schedule"):
     else:
         df_combined = old_df
 
-    # Sắp xếp lại dữ liệu theo Máy và Thứ tự chuỗi (SEQ) hoặc Ngày
     if not df_combined.empty:
         df_combined = df_combined.sort_values(["SỐ MÁY", "SEQ"], kind="stable").reset_index(drop=True)
-    
-    # Lưu lại vào session_state để hiển thị lên giao diện
+        
     st.session_state.df_raw_schedule_history = df_combined
-    st.success("🚀 Đã cập nhật và đồng bộ lịch trình thành công!")
+    st.success("🚀 Đã xử lý lịch trình hoàn tất!")
 
 # =========================
-# 4. STYLE (BORDER + CENTER + PROFESSIONAL)
+# 4. DISPLAY MA TRẬN LỊCH TRÌNH
 # =========================
-def style_matrix(df):
+df_history = st.session_state.df_raw_schedule_history.copy()
 
-    lot_colors = {}
-    values = df.values.flatten()
-
-    lots = [
-        str(x) for x in values
-        if str(x) not in ["nan", "None", "", "SỐ MÁY", "Thuộc tính"]
-    ]
-
-    lots = list(dict.fromkeys(lots))
-
-    cmap = plt.get_cmap("tab20")
-
-    for i, lot in enumerate(lots):
-        lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))
-
-    def color_row(row):
-        return [
-            f"background-color: {lot_colors.get(str(v), '')}"
-            if str(v) in lot_colors else ""
-            for v in row
-        ]
-
-    styled = df.style.apply(color_row, axis=1)
-
-    styled = styled.set_table_styles([
-        {
-            "selector": "th",
-            "props": [
-                ("background-color", "#1f4e79"),
-                ("color", "white"),
-                ("border", "1px solid #333"),
-                ("text-align", "center"),
-                ("font-weight", "bold")
-            ]
-        },
-        {
-            "selector": "td",
-            "props": [
-                ("border", "1px solid #ccc"),
-                ("text-align", "center"),
-                ("padding", "6px")
-            ]
-        },
-        {
-            "selector": "table",
-            "props": [
-                ("border-collapse", "collapse"),
-                ("width", "100%")
-            ]
-        }
-    ])
-
-    return styled
-
-
-# =========================
-# 5. DISPLAY & BẢNG PHỤ TRẠNG THÁI
-# =========================
-
-col_main, col_sub = st.columns([2, 1])
-
-with col_main:
-
-    if not st.session_state.df_matrix_schedule.empty:
-
-        st.subheader("🗓️ CHÍNH: LỊCH SẢN XUẤT PHÂN BỔ TRÊN MÁY")
-
-        st.dataframe(
-            style_matrix(st.session_state.df_matrix_schedule),
-            use_container_width=True,
-            hide_index=True
-        )
-
-    else:
-        st.info(
-            "Chưa có dữ liệu ma trận lịch trình. "
-            "Vui lòng bấm 'Generate / Refresh Schedule'."
-        )
-
-
-with col_sub:
-
-    st.subheader("📊 PHỤ: TRẠNG THÁI CHI TIẾT TỪNG LÔ")
-
-    if (
-        not st.session_state.df_raw_schedule_history.empty
-        and not df_orders.empty
-    ):
-
-        df_history = st.session_state.df_raw_schedule_history.copy()
-
-        df_end_date = (
-            df_history
-            .groupby(
-                ["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],
-                as_index=False
-            )["Date_Obj"]
-            .max()
-        )
-
-        df_end_date.rename(
-            columns={
-                "Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"
-            },
-            inplace=True
-        )
-
-
-        df_status = pd.merge(
-            df_orders[
-                [
-                    "SỐ MÁY",
-                    "SỐ LÔ",
-                    "MÃ HÀNG",
-                    "NGÀY GIAO",
-                    "SL ĐẶT",
-                    "TỒN KHO"
-                ]
-            ],
-            df_end_date,
-            on=[
-                "SỐ MÁY",
-                "SỐ LÔ",
-                "MÃ HÀNG"
-            ],
-            how="left"
-        )
-
-
-        def check_status(row):
-
-            if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):
-
-                if (
-                    row["SL ĐẶT"] - row["TỒN KHO"]
-                ) <= 0:
-                    return "🟢 Đủ Tồn Kho (OK)"
-
-                return "⚪ Chưa sắp lịch"
-
-
-            date_real = pd.to_datetime(
-                row["NGÀY HOÀN THÀNH THỰC TẾ"]
-            ).date()
-
-
-            date_delivery = (
-                pd.to_datetime(row["NGÀY GIAO"]).date()
-                if not pd.isna(row["NGÀY GIAO"])
-                else None
-            )
-
-
-            if date_delivery and date_real > date_delivery:
-
-                return (
-                    f"🔴 Lô {row['SỐ LÔ']} trễ "
-                    f"({(date_real - date_delivery).days} ngày)"
-                )
-
-            else:
-
-                return f"🟢 Lô {row['SỐ LÔ']} ok"
-
-
-
-        df_status["TRẠNG THÁI"] = df_status.apply(
-            check_status,
-            axis=1
-        )
-
-
-        df_status["NGÀY GIAO"] = (
-            df_status["NGÀY GIAO"]
-            .dt.strftime("%d/%m/%Y")
-            .fillna("Chưa có")
-        )
-
-
-        df_status["NGÀY HOÀN THÀNH THỰC TẾ"] = (
-            pd.to_datetime(
-                df_status["NGÀY HOÀN THÀNH THỰC TẾ"]
-            )
-            .dt.strftime("%d/%m/%Y")
-            .fillna("-")
-        )
-
-
-        df_display_status = df_status[
-            [
-                "SỐ MÁY",
-                "SỐ LÔ",
-                "MÃ HÀNG",
-                "TRẠNG THÁI"
-            ]
-        ]
-
-
-        def style_status_rows(val):
-
-            if "🔴" in str(val):
-                return (
-                    "background-color: #ffcccc;"
-                    "color: #cc0000;"
-                    "font-weight: bold;"
-                )
-
-            elif "🟢" in str(val):
-                return (
-                    "background-color: #e2f0d9;"
-                    "color: #385723;"
-                )
-
-            return ""
-
-
-        styled_sub_table = (
-            df_display_status.style
-            .apply(
-                lambda x: [
-                    style_status_rows(v)
-                    for v in x
-                ],
-                subset=["TRẠNG THÁI"]
-            )
-            .set_table_styles([
-                {
-                    "selector": "th",
-                    "props": [
-                        ("background-color", "#2f5597"),
-                        ("color", "white"),
-                        ("font-weight", "bold")
-                    ]
-                },
-                {
-                    "selector": "td",
-                    "props": [
-                        ("border", "1px solid #ccc"),
-                        ("padding", "5px")
-                    ]
-                }
-            ])
-        )
-
-
-        st.dataframe(
-            styled_sub_table,
-            use_container_width=True,
-            hide_index=True
-        )
-
-
-    else:
-
-        st.info(
-            "Hệ thống chưa có đủ lịch trình "
-            "để phân tích trạng thái các lô."
-        )
+if not df_history.empty:
+    st.subheader("📋 Bảng Lịch Trình Chi Tiết (Dạng Ma Trận)")
+    
+    # Định dạng ngày ngắn gọn để hiển thị header cột (VD: 2024-03-20)
+    df_history["Ngày"] = df_history["Date_Obj"].dt.strftime('%Y-%m-%d')
+    df_history["Thông tin Lô"] = df_history["SỐ LÔ"] + " (" + df_history["MÃ HÀNG"] + ")"
+    
+    # Tạo Pivot table thành dạng ma trận: Dòng = SỐ MÁY, Cột = Ngày, Giá trị = Số Lô (Mã Hàng)
+    try:
+        df_pivot = df_history.pivot(index="SỐ MÁY", columns="Ngày", values="Thông tin Lô").fillna("-")
+        st.dataframe(df_pivot, use_container_width=True)
+        
+        # Hiển thị thêm bảng data thô nếu cần đối soát
+        with st.expander("🔍 Xem dữ liệu thô dạng bảng (Raw Data)"):
+            st.dataframe(df_history[["SỐ MÁY", "Ngày", "SEQ", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT"]], use_container_width=True)
+    except Exception as e:
+        st.error(f"Lỗi tạo bảng ma trận hiển thị: {e}")
