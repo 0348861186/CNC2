@@ -13,3 +13,4 @@ google-genai
 tabulate
 openai>=1.0.0
 playwright
+ortools
