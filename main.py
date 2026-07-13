@@ -23,6 +23,7 @@ h1 {
 /* TABLE STYLE GLOBAL */
 table {
     border-collapse: collapse !important;
+    width: 100% !important;
 }
 td, th {
     text-align: center !important;
@@ -187,7 +188,7 @@ if st.button("🚀 Generate / Refresh Schedule / 生成/刷新排程", type="pri
         if machine not in machine_seq:
             machine_seq[machine] = 0
             
-        # Sử dụng np.ceil để làm tròn lên số ngày sản xuất cần thiết một cách an toàn
+        # Sử dụng np.ceil làm tròn lên số ngày sản xuất an toàn
         days_needed = max(1, int(np.ceil(qty_needed / row["NĂNG SUẤT"])))
         start_day = machine_last_date[machine]
         start_seq = machine_seq[machine]
@@ -236,11 +237,14 @@ if st.button("🚀 Generate / Refresh Schedule / 生成/刷新排程", type="pri
         
     st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
     st.success("🎉 Đã đồng bộ và làm mới lịch sản xuất! / 生产排程已成功同步并刷新！")
+    st.rerun()
 
 # =========================
 # 4. ADVANCED VISUAL MATRIX STYLING
 # =========================
 def style_matrix(df):
+    if df.empty:
+        return df
     lot_colors = {}
     
     # Lấy danh sách số lô duy nhất từ dữ liệu
@@ -251,7 +255,6 @@ def style_matrix(df):
     for i, lot in enumerate(lots):
         lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))
 
-    # Kích hoạt màu nền đối với hàng thuộc tính "SỐ LÔ / 批号"
     def color_cells(row):
         is_lot_row = row["Thuộc tính / 属性"] in ["SỐ LÔ / 批号", "SỐ LÔ"]
         styles = []
@@ -283,13 +286,6 @@ def style_matrix(df):
                 ("text-align", "center"),
                 ("padding", "6px")
             ]
-        },
-        {
-            "selector": "table",
-            "props": [
-                ("border-collapse", "collapse"),
-                ("width", "100%")
-            ]
         }
     ])
     return styled
@@ -308,21 +304,25 @@ with col_main:
             hide_index=True
         )
     else:
-        st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng nhấn nút 'Generate / Refresh Schedule'. / 暂无排程矩阵数据。请点击“生成/刷新排程”按钮。")
+        st.info("💡 Chưa có dữ liệu ma trận lịch trình. Vui lòng nhấn nút 'Generate / Refresh Schedule' phía trên để chạy tính toán phân bổ máy. / 暂无排程矩阵数据。")
 
 with col_sub:
     st.subheader("📊 PHỤ: TIẾN ĐỘ THỜI GIAN THỰC / 副表：实时进度与状态")
-    if not st.session_state.df_raw_schedule_history.empty and not df_orders.empty:
+    if not df_orders.empty:
+        # Lấy ngày kết thúc thực tế từ lịch sử (nếu có)
         df_history = st.session_state.df_raw_schedule_history.copy()
-        df_end_date = df_history.groupby(["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], as_index=False)["Date_Obj"].max()
-        df_end_date.rename(columns={"Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"}, inplace=True)
-
-        df_status = pd.merge(
-            df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "SL ĐẶT", "TỒN KHO"]],
-            df_end_date,
-            on=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],
-            how="left"
-        )
+        if not df_history.empty:
+            df_end_date = df_history.groupby(["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], as_index=False)["Date_Obj"].max()
+            df_end_date.rename(columns={"Date_Obj": "NGÀY HOÀN THÀNH THỰC TẾ"}, inplace=True)
+            df_status = pd.merge(
+                df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "SL ĐẶT", "TỒN KHO"]],
+                df_end_date,
+                on=["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"],
+                how="left"
+            )
+        else:
+            df_status = df_orders[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "NGÀY GIAO", "SL ĐẶT", "TỒN KHO"]].copy()
+            df_status["NGÀY HOÀN THÀNH THỰC TẾ"] = np.nan
 
         def check_status(row):
             # 1. Kiểm tra nếu đơn hàng chưa được xếp lịch sản xuất
@@ -331,15 +331,14 @@ with col_sub:
                     return "🟢 Đủ Tồn Kho (OK) / 库存充足"
                 return "⚪ Chưa sắp lịch / 未排程"
 
-            # 2. Ép kiểu dữ liệu an toàn về dạng Timestamp của Pandas để xử lý giá trị trống NaT
+            # 2. Ép kiểu dữ liệu an toàn về dạng Timestamp của Pandas
             ts_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"])
             ts_delivery = pd.to_datetime(row["NGÀY GIAO"])
 
-            # Nếu không điền hạn ngày giao hàng (NaT) thì coi như mặc định đạt tiến độ công việc
             if pd.isna(ts_delivery):
                 return "🟢 Kế hoạch Đạt (OK) / 正常达成"
 
-            # 3. Tiến hành trích xuất .date() để so sánh logic trực quan, chính xác giữa các ngày
+            # 3. Tiến hành trích xuất .date() để so sánh logic giữa các ngày
             date_real = ts_real.date()
             date_delivery = ts_delivery.date()
 
@@ -379,4 +378,4 @@ with col_sub:
 
         st.dataframe(styled_sub_table, use_container_width=True, hide_index=True)
     else:
-        st.info("Hệ thống chưa có đủ lịch trình để cấu trúc bảng kiểm soát trạng thái. / 系统尚无足够排程数据来生成状态控制表。")
+        st.info("Hệ thống chưa có đủ lịch trình để cấu trúc bảng kiểm soát trạng thái.")
