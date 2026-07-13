@@ -9,7 +9,7 @@ from io import BytesIO
 # =========================
 # 1. CONFIG
 # =========================
-st.set_page_config(page_title="Production Schedule / 生产排 trình", layout="wide")
+st.set_page_config(page_title="Production Schedule / 生产排程", layout="wide")
 st.title("📅 PRODUCTION SCHEDULE DASHBOARD / 生产排程看板")
 
 st.markdown("""
@@ -162,7 +162,7 @@ if st.button("🚀 Generate / Refresh Schedule | 生成 / 刷新排程"):
 
         group = group.sort_values("SEQ")
 
-        # Bổ sung thông tin song ngữ ở phần hiển thị thuộc tính dòng (Attribute)
+        # Bổ sung chữ song ngữ vào giá trị của cột Attribute để hiển thị ở dòng đầu mỗi nhóm máy
         row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE / 排程日期"}
         row_lo = {"SỐ MÁY": machine_id, "Attribute": "LOT / 批号"}
         row_hang = {"SỐ MÁY": machine_id, "Attribute": "ITEM / 品号"}
@@ -192,7 +192,7 @@ def style_matrix(df):
 
     for machine in df["SỐ MÁY"].unique():
 
-        # Cập nhật logic tìm dòng LOT theo text đã có song ngữ
+        # Khớp đúng với chuỗi "LOT / 批号" đã được song ngữ hóa ở trên
         lot_row = df[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT / 批号")]
 
         if lot_row.empty:
@@ -224,7 +224,7 @@ def style_matrix(df):
                 colors.append("")
                 continue
 
-            # Cập nhật logic tìm dòng LOT theo text đã có song ngữ
+            # Khớp đúng với chuỗi "LOT / 批号"
             lot_val = df.loc[
                 (df["SỐ MÁY"] == machine) &
                 (df["Attribute"] == "LOT / 批号"),
@@ -237,13 +237,12 @@ def style_matrix(df):
 
         return colors
 
-    # Đổi tên cột hiển thị tiêu đề bảng sang song ngữ Trung - Việt
-    df_renamed = df.rename(columns={
-        "SỐ MÁY": "SỐ MÁY / 机台号",
-        "Attribute": "THUỘC TÍNH / 属性"
-    })
+    # Thực hiện apply trên cấu trúc DataFrame gốc (cột giữ nguyên SỐ MÁY, Attribute để tránh lỗi KeyError)
+    styled = df.style.apply(apply_color, axis=1)
 
-    styled = df_renamed.style.apply(apply_color, axis=1)
+    # Đổi nhãn tiêu đề cột hiển thị ra ngoài giao diện (Không làm thay đổi cấu trúc DataFrame chạy ngầm)
+    new_labels = ["SỐ MÁY / 机台号", "THUỘC TÍNH / 属性"] + list(df.columns[2:])
+    styled = styled.relabel_columns(new_labels)
 
     styled = styled.set_table_styles([
         {"selector": "th",
@@ -275,7 +274,7 @@ def style_matrix(df):
 st.markdown("---")
 st.subheader("📦 INVENTORY UPDATE & DELAY ALERT SYSTEM / 库存更新与延期预警系统")
 
-# Yêu cầu 1: Thêm nút upload file tồn kho trên dashboard
+# Thêm nút upload file tồn kho trên dashboard
 inv_file = st.file_uploader("📂 Upload Inventory File (Cập nhật Tồn Kho) / 上传库存文件 (更新库存)", type=["xlsx"], key="inv_upload")
 
 # Bản sao dữ liệu order để tính toán cảnh báo mà không ảnh hưởng tới lịch đã xếp
@@ -285,21 +284,16 @@ if inv_file is None:
     st.info("💡 Chưa upload file tồn kho mới. Hệ thống đang tính toán cảnh báo dựa trên số lượng tồn kho ban đầu. / 未上传新库存文件。系统将基于初始库存量计算预警。")
 else:
     try:
-        # Giả định file tồn kho có các cột tối thiểu: "MÃ HÀNG", "TỒN KHO" (hoặc "SL TỒN")
         df_inv = pd.read_excel(inv_file)
         
-        # Chuẩn hóa tên cột file tồn kho
         df_inv.columns = [str(c).strip().upper() for c in df_inv.columns]
         if "MÃ HÀNG" in df_inv.columns:
-            # Tìm cột chứa giá trị số lượng tồn kho
             qty_col = "TỒN KHO" if "TỒN KHO" in df_inv.columns else (df_inv.columns[1] if len(df_inv.columns) > 1 else None)
             
             if qty_col:
                 df_inv[qty_col] = pd.to_numeric(df_inv[qty_col], errors="coerce").fillna(0)
-                # Gom nhóm tồn kho theo mã hàng phòng trường hợp trùng lặp mã hàng trong file tồn kho
                 inv_dict = df_inv.groupby("MÃ HÀNG")[qty_col].sum().to_dict()
                 
-                # Yêu cầu 3: Cộng dồn và cập nhật số lượng tồn kho tương ứng của mã hàng đó
                 df_orders_calc["TỒN KHO"] = df_orders_calc.apply(
                     lambda r: r["TỒN KHO"] + inv_dict.get(r["MÃ HÀNG"], 0), axis=1
                 )
@@ -307,7 +301,7 @@ else:
             else:
                 st.error("File tồn kho cần có cột chứa số lượng hàng tồn. / 库存文件需包含库存数量列。")
         else:
-            st.error("File tồn kho không tìm thấy cột 'MÃ HÀNG'. / 库存文件中未找到“MÃ HÀNG”（品号）列。")
+            st.error("File tồn kho không tìm thấy cột 'MÃ HÀNG'. / 库存文件中未找到“MÃ HÀNG”列。")
     except Exception as e:
         st.error(f"Lỗi đọc file tồn kho / 读取库存文件出错: {e}")
 
@@ -317,11 +311,9 @@ df_history = st.session_state.df_raw_schedule_history.copy()
 if not df_history.empty and not df_orders_calc.empty:
     df_history["Date_Obj"] = pd.to_datetime(df_history["Date_Obj"])
     
-    # Tìm ngày kết thúc thực tế của từng SỐ LÔ và MÃ HÀNG dựa trên lịch đã xếp
     df_delivery_actual = df_history.groupby(["SỐ LÔ", "MÃ HÀNG"])["Date_Obj"].max().reset_index()
     df_delivery_actual.rename(columns={"Date_Obj": "NGÀY_GIAO_THỰC_TẾ"}, inplace=True)
     
-    # Merge lịch thực tế vào bảng thông tin đơn hàng tính toán
     df_alert_merge = pd.merge(df_orders_calc, df_delivery_actual, on=["SỐ LÔ", "MÃ HÀNG"], how="inner")
     
     alert_records = []
@@ -330,17 +322,10 @@ if not df_history.empty and not df_orders_calc.empty:
         ngay_giao_thucte = row["NGÀY_GIAO_THỰC_TẾ"]
         
         if pd.notna(ngay_giao_khach) and pd.notna(ngay_giao_thucte):
-            # Tính số ngày trễ
             so_ngay_tre = (ngay_giao_thucte - ngay_giao_khach).days
             
-            # Yêu cầu 2: Chỉ hiển thị đối với trường hợp trễ hàng (so_ngay_tre > 0)
             if so_ngay_tre > 0:
-                # Tính số lượng thiếu tại thời điểm ngày giao của khách hàng
-                # Lấy số ngày chạy sau hạn bàn giao
-                # Tổng số lượng sản xuất thực tế dựa trên lịch sử sản xuất
                 total_qty_needed = max(0, row["SL ĐẶT"] - row["TỒN KHO"])
-                
-                # Số lượng thiếu = (Số ngày trễ) * NĂNG SUẤT nhưng không vượt quá tổng lượng cần sản xuất
                 sl_thieu = min(total_qty_needed, so_ngay_tre * row["NĂNG SUẤT"])
                 
                 if sl_thieu > 0:
@@ -352,12 +337,10 @@ if not df_history.empty and not df_orders_calc.empty:
                         "SỐ LƯỢNG THIẾU / 欠数": int(sl_thieu)
                     })
                     
-    # Yêu cầu 2: Hiển thị bảng cảnh báo trạng thái về trễ hàng
     if alert_records:
         df_alert_display = pd.DataFrame(alert_records)
         st.error("⚠️ BẢNG CẢNH BÁO TRẠNG THÁI VỀ TRỄ HÀNG / 订单交期延期预警表")
         
-        # Định dạng Style bảng cảnh báo cho chuyên nghiệp
         styled_alert = df_alert_display.style.set_table_styles([
             {"selector": "th", "props": [("background-color", "#d9534f"), ("color", "white"), ("font-weight", "bold")]},
             {"selector": "td", "props": [("border", "1px solid #ccc"), ("padding", "8px")]}
