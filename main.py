@@ -245,11 +245,13 @@ def style_matrix(df):
 
         return colors
 
-    # Lọc bỏ các cột kỹ thuật không cần thiết trước khi render để bảng nhìn sạch gọn
-    display_cols = [c for c in df.columns if c not in ["SỐ MÁY", "Attribute"]]
-    df_display = df[display_cols]
+    # Áp dụng hàm apply_color lên DataFrame ĐẦY ĐỦ để tránh lỗi KeyError: 'SỐ MÁY'
+    styled = df.style.apply(apply_color, axis=1)
 
-    styled = df_display.style.apply(apply_color, axis=1)
+    # Sau khi tính toán màu xong, dùng Styler để ẨN các cột kỹ thuật không cần thiết trên UI
+    cols_to_hide = [c for c in ["SỐ MÁY", "Attribute"] if c in df.columns]
+    if cols_to_hide:
+        styled = styled.hide(cols_to_hide, axis="columns")
 
     styled = styled.set_table_styles([
         {"selector": "th",
