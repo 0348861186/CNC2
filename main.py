@@ -9,8 +9,8 @@ from io import BytesIO
 # =========================
 # 1. CONFIG
 # =========================
-st.set_page_config(page_title="Production Schedule / 生产 kế hoạch", layout="wide")
-st.title("📅 PRODUCTION SCHEDULE DASHBOARD / 生产排程看板")
+st.set_page_config(page_title="Production Schedule", layout="wide")
+st.title("📅 PRODUCTION SCHEDULE DASHBOARD")
 
 st.markdown("""
 <style>
@@ -39,19 +39,19 @@ if "df_raw_schedule_history" not in st.session_state:
     )
 
 # RESET
-if st.sidebar.button("🗑️ Reset Schedule History / 清空排程歷史"):
+if st.sidebar.button("🗑️ Reset Schedule History"):
     st.session_state.df_matrix_schedule = pd.DataFrame()
     st.session_state.df_raw_schedule_history = pd.DataFrame(
         columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
-    st.sidebar.success("Schedule history cleared! / 排程歷史已清空！")
+    st.sidebar.success("Schedule history cleared!")
     st.rerun()
 
 # =========================
 # INPUT
 # =========================
-st.sidebar.header("⚙ INPUT / 輸入")
-uploaded_file = st.sidebar.file_uploader("📂 Upload Order File / 上傳訂單文件", type=["xlsx"])
+st.sidebar.header("⚙ INPUT")
+uploaded_file = st.sidebar.file_uploader("📂 Upload Order File", type=["xlsx"])
 
 def load_orders(file):
     if file is None:
@@ -71,13 +71,13 @@ def load_orders(file):
 df_orders = load_orders(uploaded_file)
 
 if df_orders.empty:
-    st.warning("No order data available. / 暫無訂單數據。")
+    st.warning("No order data available.")
     st.stop()
 
 # =========================
 # GENERATE (LOGIC UNCHANGED)
 # =========================
-if st.button("🚀 Generate / Refresh Schedule | 生成/刷新排程"):
+if st.button("🚀 Generate / Refresh Schedule"):
 
     start_planning_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -162,17 +162,10 @@ if st.button("🚀 Generate / Refresh Schedule | 生成/刷新排程"):
 
         group = group.sort_values("SEQ")
 
-        # Gộp dòng số máy: Chỉ hiển thị tên máy ở dòng SCHEDULE, các dòng sau để rỗng ""
-        row_ngay = {"SỐ MÁY / 机台": machine_id, "THUỘC TÍNH / 属性": "SCHEDULE / 排程日期"}
-        row_lo = {"SỐ MÁY / 机台": "", "THUỘC TÍNH / 属性": "LOT / 批号"}
-        row_hang = {"SỐ MÁY / 机台": "", "THUỘC TÍNH / 属性": "ITEM / 品号"}
-        row_ns = {"SỐ MÁY / 机台": "", "THUỘC TÍNH / 属性": "OUTPUT / 产能"}
-
-        # Cột ẩn kỹ thuật để phục vụ việc tô màu
-        row_ngay["_ORIGINAL_MACHINE"] = machine_id
-        row_lo["_ORIGINAL_MACHINE"] = machine_id
-        row_hang["_ORIGINAL_MACHINE"] = machine_id
-        row_ns["_ORIGINAL_MACHINE"] = machine_id
+        row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE"}
+        row_lo = {"SỐ MÁY": machine_id, "Attribute": "LOT"}
+        row_hang = {"SỐ MÁY": machine_id, "Attribute": "ITEM"}
+        row_ns = {"SỐ MÁY": machine_id, "Attribute": "OUTPUT"}
 
         for _, r in group.iterrows():
             col = f"C{int(r['SEQ'])}"
@@ -184,7 +177,7 @@ if st.button("🚀 Generate / Refresh Schedule | 生成/刷新排程"):
         final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
 
     st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
-    st.success("Schedule updated successfully / 排程更新成功！")
+    st.success("Schedule updated successfully")
 
 # =========================
 # STYLE (MACHINE + LOT COLOR FIXED)
@@ -196,15 +189,15 @@ def style_matrix(df):
     color_map = {}
     color_index = 0
 
-    for machine in df["_ORIGINAL_MACHINE"].unique():
+    for machine in df["SỐ MÁY"].unique():
 
-        lot_row = df[(df["_ORIGINAL_MACHINE"] == machine) & (df["THUỘC TÍNH / 属性"] == "LOT / 批号")]
+        lot_row = df[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT")]
 
         if lot_row.empty:
             continue
 
         for col in lot_row.columns:
-            if col in ["SỐ MÁY / 机台", "THUỘC TÍNH / 属性", "_ORIGINAL_MACHINE"]:
+            if col in ["SỐ MÁY", "Attribute"]:
                 continue
 
             lot = str(lot_row[col].values[0])
@@ -220,18 +213,18 @@ def style_matrix(df):
         return color_map.get((machine, str(lot)), "")
 
     def apply_color(row):
-        machine = row["_ORIGINAL_MACHINE"]
+        machine = row["SỐ MÁY"]
         colors = []
 
         for col in row.index:
 
-            if col in ["SỐ MÁY / 机台", "THUỘC TÍNH / 属性", "_ORIGINAL_MACHINE"]:
+            if col in ["SỐ MÁY", "Attribute"]:
                 colors.append("")
                 continue
 
             lot_val = df.loc[
-                (df["_ORIGINAL_MACHINE"] == machine) &
-                (df["THUỘC TÍNH / 属性"] == "LOT / 批号"),
+                (df["SỐ MÁY"] == machine) &
+                (df["Attribute"] == "LOT"),
                 col
             ].values
 
@@ -242,10 +235,6 @@ def style_matrix(df):
         return colors
 
     styled = df.style.apply(apply_color, axis=1)
-
-    # Dùng thuộc tính của Styler để ẩn cột kỹ thuật "_ORIGINAL_MACHINE" khi xuất ra giao diện
-    if "_ORIGINAL_MACHINE" in df.columns:
-        styled = styled.hide(["_ORIGINAL_MACHINE"], axis="columns")
 
     styled = styled.set_table_styles([
         {"selector": "th",
@@ -275,60 +264,55 @@ def style_matrix(df):
 # 2 & 3. UPLOAD INVENTORY & DELAY ALERTS
 # =========================
 st.markdown("---")
-st.subheader("📦 INVENTORY UPDATE & DELAY ALERT SYSTEM / 库存更新与交期延迟预警系统")
+st.subheader("📦 INVENTORY UPDATE & DELAY ALERT SYSTEM")
 
-# Upload file tồn kho (Song ngữ)
-inv_file = st.file_uploader("📂 Upload Inventory File / 上傳庫存文件 (Cập nhật Tồn Kho / 更新庫存量)", type=["xlsx"], key="inv_upload")
+# Yêu cầu 1: Thêm nút upload file tồn kho trên dashboard
+inv_file = st.file_uploader("📂 Upload Inventory File (Cập nhật Tồn Kho)", type=["xlsx"], key="inv_upload")
 
+# Bản sao dữ liệu order để tính toán cảnh báo mà không ảnh hưởng tới lịch đã xếp
 df_orders_calc = df_orders.copy()
 
 if inv_file is None:
-    st.info("💡 Chưa upload file tồn kho mới. Hệ thống đang tính toán cảnh báo dựa trên số lượng tồn kho ban đầu. / 尚未上傳新庫存文件。系統正基於初始庫存量計算預警。")
+    st.info("💡 Chưa upload file tồn kho mới. Hệ thống đang tính toán cảnh báo dựa trên số lượng tồn kho ban đầu.")
 else:
     try:
+        # Giả định file tồn kho có các cột tối thiểu: "MÃ HÀNG", "TỒN KHO" (hoặc "SL TỒN")
         df_inv = pd.read_excel(inv_file)
-        df_inv.columns = [str(c).strip().upper() for c in df_inv.columns]
         
-        ma_hang_col = None
-        for c in df_inv.columns:
-            if "MÃ HÀNG" in c or "品号" in c or "ITEM" in c:
-                ma_hang_col = c
-                break
-        if ma_hang_col is None and len(df_inv.columns) > 0:
-            ma_hang_col = df_inv.columns[0]
+        # Chuẩn hóa tên cột file tồn kho
+        df_inv.columns = [str(c).strip().upper() for c in df_inv.columns]
+        if "MÃ HÀNG" in df_inv.columns:
+            # Tìm cột chứa giá trị số lượng tồn kho
+            qty_col = "TỒN KHO" if "TỒN KHO" in df_inv.columns else (df_inv.columns[1] if len(df_inv.columns) > 1 else None)
             
-        if ma_hang_col:
-            qty_col = None
-            for c in df_inv.columns:
-                if "TỒN KHO" in c or "库存" in c or "SL TỒN" in c or "QTY" in c:
-                    qty_col = c
-                    break
-            if qty_col is None and len(df_inv.columns) > 1:
-                qty_col = df_inv.columns[1]
-                
             if qty_col:
                 df_inv[qty_col] = pd.to_numeric(df_inv[qty_col], errors="coerce").fillna(0)
-                inv_dict = df_inv.groupby(ma_hang_col)[qty_col].sum().to_dict()
+                # Gom nhóm tồn kho theo mã hàng phòng trường hợp trùng lặp mã hàng trong file tồn kho
+                inv_dict = df_inv.groupby("MÃ HÀNG")[qty_col].sum().to_dict()
                 
+                # Yêu cầu 3: Cộng dồn và cập nhật số lượng tồn kho tương ứng của mã hàng đó
                 df_orders_calc["TỒN KHO"] = df_orders_calc.apply(
                     lambda r: r["TỒN KHO"] + inv_dict.get(r["MÃ HÀNG"], 0), axis=1
                 )
-                st.success("⚡ Đã cộng dồn dữ liệu tồn kho mới vào hệ thống tính toán cảnh báo! / 新庫存數據已成功累加至預警系統！")
+                st.success("⚡ Đã cộng dồn dữ liệu tồn kho mới vào hệ thống tính toán cảnh báo!")
             else:
-                st.error("File tồn kho cần có cột chứa số lượng hàng tồn. / 庫存文件需包含數量列。")
+                st.error("File tồn kho cần có cột chứa số lượng hàng tồn.")
         else:
-            st.error("File tồn kho không tìm thấy cột mã hàng. / 庫存文件未找到品號列。")
+            st.error("File tồn kho không tìm thấy cột 'MÃ HÀNG'.")
     except Exception as e:
-        st.error(f"Lỗi đọc file tồn kho / 讀取庫存文件出錯: {e}")
+        st.error(f"Lỗi đọc file tồn kho: {e}")
 
+# Tiến hành tính toán bảng cảnh báo trạng thái trễ hàng dựa trên `df_raw_schedule_history` hiện tại
 df_history = st.session_state.df_raw_schedule_history.copy()
 
 if not df_history.empty and not df_orders_calc.empty:
     df_history["Date_Obj"] = pd.to_datetime(df_history["Date_Obj"])
     
+    # Tìm ngày kết thúc thực tế của từng SỐ LÔ và MÃ HÀNG dựa trên lịch đã xếp
     df_delivery_actual = df_history.groupby(["SỐ LÔ", "MÃ HÀNG"])["Date_Obj"].max().reset_index()
     df_delivery_actual.rename(columns={"Date_Obj": "NGÀY_GIAO_THỰC_TẾ"}, inplace=True)
     
+    # Merge lịch thực tế vào bảng thông tin đơn hàng tính toán
     df_alert_merge = pd.merge(df_orders_calc, df_delivery_actual, on=["SỐ LÔ", "MÃ HÀNG"], how="inner")
     
     alert_records = []
@@ -337,34 +321,43 @@ if not df_history.empty and not df_orders_calc.empty:
         ngay_giao_thucte = row["NGÀY_GIAO_THỰC_TẾ"]
         
         if pd.notna(ngay_giao_khach) and pd.notna(ngay_giao_thucte):
+            # Tính số ngày trễ
             so_ngay_tre = (ngay_giao_thucte - ngay_giao_khach).days
             
+            # Yêu cầu 2: Chỉ hiển thị đối với trường hợp trễ hàng (so_ngay_tre > 0)
             if so_ngay_tre > 0:
+                # Tính số lượng thiếu tại thời điểm ngày giao của khách hàng
+                # Lấy số ngày chạy sau hạn bàn giao
+                # Tổng số lượng sản xuất thực tế dựa trên lịch sử sản xuất
                 total_qty_needed = max(0, row["SL ĐẶT"] - row["TỒN KHO"])
+                
+                # Số lượng thiếu = (Số ngày trễ) * NĂNG SUẤT nhưng không vượt quá tổng lượng cần sản xuất
                 sl_thieu = min(total_qty_needed, so_ngay_tre * row["NĂNG SUẤT"])
                 
                 if sl_thieu > 0:
                     alert_records.append({
-                        "SỐ LÔ / 批号": row["SỐ LÔ"],
-                        "MÃ HÀNG / 品号": row["MÃ HÀNG"],
-                        "NGÀY GIAO / 交期": ngay_giao_khach.strftime("%d/%m/%Y"),
-                        "SỐ NGÀY TRỂ / 延误天数": so_ngay_tre,
-                        "SỐ LƯỢNG THIẾU / 欠数": int(sl_thieu)
+                        "SỐ LÔ": row["SỐ LÔ"],
+                        "MÃ HÀNG": row["MÃ HÀNG"],
+                        "NGÀY GIAO": ngay_giao_khach.strftime("%d/%m/%Y"),
+                        "SỐ NGÀY TRỂ": so_ngay_tre,
+                        "SỐ LƯỢNG THIẾU": int(sl_thieu)
                     })
                     
+    # Yêu cầu 2: Hiển thị bảng cảnh báo trạng thái về trễ hàng
     if alert_records:
         df_alert_display = pd.DataFrame(alert_records)
-        st.error("⚠️ BẢNG CẢNH BÁO TRẠNG THÁI VỀ TRỄ HÀNG / 交期交货延误状态交期预警表")
+        st.error("⚠️ BẢNG CẢNH BÁO TRẠNG THÁI VỀ TRỄ HÀNG")
         
+        # Định dạng Style bảng cảnh báo cho chuyên nghiệp
         styled_alert = df_alert_display.style.set_table_styles([
             {"selector": "th", "props": [("background-color", "#d9534f"), ("color", "white"), ("font-weight", "bold")]},
             {"selector": "td", "props": [("border", "1px solid #ccc"), ("padding", "8px")]}
         ])
         st.dataframe(styled_alert, use_container_width=True, hide_index=True)
     else:
-        st.success("🎉 Hiện tại không có lô hàng nào bị trễ (Dashboard gọn gàng!) / 目前無任何批次延誤（看板整洁！）")
+        st.success("🎉 Hiện tại không có lô hàng nào bị trễ (Dashboard gọn gàng!).")
 else:
-    st.info("Chưa có dữ liệu lịch xếp hoặc đơn hàng để thực hiện tính toán bảng cảnh báo. / 暫無排程歷史數據或訂單數據以供計算預警。")
+    st.info("Chưa có dữ liệu lịch xếp hoặc đơn hàng để thực hiện tính toán bảng cảnh báo.")
 
 # =========================
 # DISPLAY SCHEDULE
@@ -372,25 +365,22 @@ else:
 st.markdown("---")
 if not st.session_state.df_matrix_schedule.empty:
 
-    st.subheader("📅 Production Schedule / 生产排程表")
+    st.subheader("📅 Production Schedule")
 
-    # Truyền toàn bộ bảng (gồm cả cột ẩn kỹ thuật) vào hàm style_matrix để không bị lỗi KeyError
     st.dataframe(
         style_matrix(st.session_state.df_matrix_schedule),
         use_container_width=True,
         hide_index=True
     )
 
-    st.subheader("📥 Export Excel / 匯出 Excel")
+    st.subheader("📥 Export Excel")
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        # Khi xuất excel lọc bỏ cột kỹ thuật đi cho sạch dữ liệu
-        columns_to_export = [c for c in st.session_state.df_matrix_schedule.columns if c != "_ORIGINAL_MACHINE"]
-        st.session_state.df_matrix_schedule[columns_to_export].to_excel(writer, index=False, sheet_name="Schedule")
+        st.session_state.df_matrix_schedule.to_excel(writer, index=False, sheet_name="Schedule")
 
     st.download_button(
-        "💾 Download Excel / 下載 Excel",
+        "💾 Download Excel",
         data=output.getvalue(),
         file_name=f"Production_Schedule_{datetime.now().strftime('%Y%m%d')}.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
