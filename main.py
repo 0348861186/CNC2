@@ -7,37 +7,22 @@ from datetime import datetime, timedelta
 from io import BytesIO
 
 # =========================
-# 1. CONFIG & CSS FOR PROFESSIONAL TABLE
+# 1. CONFIG
 # =========================
 st.set_page_config(page_title="Production Schedule / 生产 kế hoạch", layout="wide")
 st.title("📅 PRODUCTION SCHEDULE DASHBOARD / 生产排程看板")
 
-# Ép toàn bộ bảng hiển thị trong Streamlit phải căn giữa nội dung và kẻ viền rõ ràng
 st.markdown("""
 <style>
 .block-container { padding-top: 1rem; }
 h1 { font-size: 30px; }
 
-/* Định dạng bảng biểu chuyên nghiệp */
-div[data-testid="stDataFrame"] table {
+table {
     border-collapse: collapse !important;
-    width: 100% !important;
-    border: 2px solid #555555 !important;
 }
-div[data-testid="stDataFrame"] th {
-    background-color: #1f4e79 !important;
-    color: white !important;
+td, th {
     text-align: center !important;
     vertical-align: middle !important;
-    font-weight: bold !important;
-    border: 1px solid #333333 !important;
-    padding: 8px !important;
-}
-div[data-testid="stDataFrame"] td {
-    text-align: center !important;
-    vertical-align: middle !important;
-    border: 1px solid #cccccc !important;
-    padding: 8px !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -258,28 +243,24 @@ def style_matrix(df):
 
     styled = df.style.apply(apply_color, axis=1)
 
-    # Ẩn cột kỹ thuật "_ORIGINAL_MACHINE"
+    # Dùng thuộc tính của Styler để ẩn cột kỹ thuật "_ORIGINAL_MACHINE" khi xuất ra giao diện
     if "_ORIGINAL_MACHINE" in df.columns:
         styled = styled.hide(["_ORIGINAL_MACHINE"], axis="columns")
 
-    # Áp dụng căn giữa và kẻ viền chi tiết cho từng ô
     styled = styled.set_table_styles([
         {"selector": "th",
          "props": [
              ("background-color", "#1f4e79"),
              ("color", "white"),
-             ("border", "1px solid #333333"),
+             ("border", "1px solid #333"),
              ("text-align", "center"),
-             ("vertical-align", "middle"),
-             ("font-weight", "bold"),
-             ("padding", "8px")
+             ("font-weight", "bold")
          ]},
         {"selector": "td",
          "props": [
-             ("border", "1px solid #bbbbbb"),
+             ("border", "1px solid #ccc"),
              ("text-align", "center"),
-             ("vertical-align", "middle"),
-             ("padding", "8px")
+             ("padding", "6px")
          ]},
         {"selector": "table",
          "props": [
@@ -296,7 +277,7 @@ def style_matrix(df):
 st.markdown("---")
 st.subheader("📦 INVENTORY UPDATE & DELAY ALERT SYSTEM / 库存更新与交期延迟预警系统")
 
-# Nút Upload file tồn kho
+# Upload file tồn kho (Song ngữ)
 inv_file = st.file_uploader("📂 Upload Inventory File / 上傳庫存文件 (Cập nhật Tồn Kho / 更新庫存量)", type=["xlsx"], key="inv_upload")
 
 df_orders_calc = df_orders.copy()
@@ -375,23 +356,9 @@ if not df_history.empty and not df_orders_calc.empty:
         df_alert_display = pd.DataFrame(alert_records)
         st.error("⚠️ BẢNG CẢNH BÁO TRẠNG THÁI VỀ TRỄ HÀNG / 交期交货延误状态交期预警表")
         
-        # Thiết kế bảng cảnh báo: màu đỏ cảnh báo, căn giữa và kẻ viền đen/xám rõ ràng
         styled_alert = df_alert_display.style.set_table_styles([
-            {"selector": "th", "props": [
-                ("background-color", "#d9534f"), 
-                ("color", "white"), 
-                ("font-weight", "bold"), 
-                ("border", "1px solid #333333"),
-                ("text-align", "center"),
-                ("vertical-align", "middle"),
-                ("padding", "8px")
-            ]},
-            {"selector": "td", "props": [
-                ("border", "1px solid #bbbbbb"), 
-                ("text-align", "center"),
-                ("vertical-align", "middle"),
-                ("padding", "8px")
-            ]}
+            {"selector": "th", "props": [("background-color", "#d9534f"), ("color", "white"), ("font-weight", "bold")]},
+            {"selector": "td", "props": [("border", "1px solid #ccc"), ("padding", "8px")]}
         ])
         st.dataframe(styled_alert, use_container_width=True, hide_index=True)
     else:
@@ -407,7 +374,7 @@ if not st.session_state.df_matrix_schedule.empty:
 
     st.subheader("📅 Production Schedule / 生产排程表")
 
-    # Hiển thị bảng lịch sản xuất đã được căn giữa và kẻ viền chuyên nghiệp
+    # Truyền toàn bộ bảng (gồm cả cột ẩn kỹ thuật) vào hàm style_matrix để không bị lỗi KeyError
     st.dataframe(
         style_matrix(st.session_state.df_matrix_schedule),
         use_container_width=True,
@@ -418,6 +385,7 @@ if not st.session_state.df_matrix_schedule.empty:
 
     output = BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        # Khi xuất excel lọc bỏ cột kỹ thuật đi cho sạch dữ liệu
         columns_to_export = [c for c in st.session_state.df_matrix_schedule.columns if c != "_ORIGINAL_MACHINE"]
         st.session_state.df_matrix_schedule[columns_to_export].to_excel(writer, index=False, sheet_name="Schedule")
 
