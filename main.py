@@ -9,8 +9,8 @@ from io import BytesIO
 # =========================
 # 1. CONFIG SYSTEM
 # =========================
-st.set_page_config(page_title="Production Schedule", layout="wide")
-st.title("📅 PRODUCTION SCHEDULE DASHBOARD")
+st.set_page_config(page_title="Production Schedule / 生产 plan", layout="wide")
+st.title("📅 PRODUCTION SCHEDULE DASHBOARD / 生产排程看板")
 
 st.markdown("""
 <style>
@@ -44,21 +44,21 @@ if "df_cumulative_orders" not in st.session_state:
     st.session_state.df_cumulative_orders = pd.DataFrame()
 
 # SYSTEM RESET BUTTON
-if st.sidebar.button("🗑️ Reset Toàn Bộ Hệ Thống"):
+if st.sidebar.button("🗑️ Reset Toàn Bộ Hệ Thống / 重置系统"):
     st.session_state.df_matrix_schedule = pd.DataFrame()
     st.session_state.df_raw_schedule_history = pd.DataFrame(
         columns=["SỐ MÁY", "Date_Obj", "SỐ LÔ", "MÃ HÀNG", "NĂNG SUẤT", "SEQ"]
     )
     st.session_state.df_cumulative_orders = pd.DataFrame()
-    st.sidebar.success("Đã xóa toàn bộ lịch sử và dữ liệu tích lũy!")
+    st.sidebar.success("Đã xóa toàn bộ lịch sử và dữ liệu tích lũy! / 已清除所有历史与累计数据！")
     st.rerun()
 
 # =========================
 # 2. INPUT & DATA PROCESSING
 # =========================
-st.sidebar.header("⚙ CONFIG INPUT")
-uploaded_file = st.sidebar.file_uploader("📂 Load đơn hàng mới", type=["xlsx"])
-inventory_file = st.sidebar.file_uploader("📦 Load file tồn kho hàng ngày", type=["xlsx"])
+st.sidebar.header("⚙ CONFIG INPUT / 配置输入")
+uploaded_file = st.sidebar.file_uploader("📂 Load đơn hàng mới / 加载新订单", type=["xlsx"])
+inventory_file = st.sidebar.file_uploader("📦 Load file tồn kho hàng ngày / 加载每日库存", type=["xlsx"])
 
 @st.cache_data(show_spinner=False)
 def load_orders(file):
@@ -72,14 +72,14 @@ def load_orders(file):
         df["SL ĐẶT"] = pd.to_numeric(df["SL ĐẶT"], errors="coerce").fillna(0)
         df["TỒN KHO"] = pd.to_numeric(df["TỒN KHO"], errors="coerce").fillna(0)
         
-        # Chuẩn hóa dữ liệu chuỗi chuỗi
+        # Chuẩn hóa dữ liệu chuỗi
         df["SỐ MÁY"] = df["SỐ MÁY"].astype(str).str.strip()
         df["SỐ LÔ"] = df["SỐ LÔ"].astype(str).str.strip()
         df["MÃ HÀNG"] = df["MÃ HÀNG"].astype(str).str.strip()
         df = df.sort_values(["SỐ MÁY", "SỐ LÔ", "NGÀY ĐẶT HÀNG"], kind="stable")
         return df
     except Exception as e:
-        st.sidebar.error(f"Lỗi cấu trúc file đơn hàng: {e}")
+        st.sidebar.error(f"Lỗi cấu trúc file đơn hàng / 订单文件结构错误: {e}")
         return pd.DataFrame()
 
 @st.cache_data(show_spinner=False)
@@ -94,7 +94,7 @@ def load_inventory(file):
         df_inv["TỒN KHO MỚI"] = pd.to_numeric(df_inv["TỒN KHO"], errors="coerce").fillna(0)
         return df_inv[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "TỒN KHO MỚI"]]
     except Exception as e:
-        st.sidebar.error(f"Lỗi cấu trúc file tồn kho: {e}")
+        st.sidebar.error(f"Lỗi cấu trúc file tồn kho / 库存文件结构错误: {e}")
         return pd.DataFrame()
 
 # BƯỚC 2.1: Tích hợp Đơn hàng mới
@@ -116,18 +116,18 @@ if not df_inventory.empty and not st.session_state.df_cumulative_orders.empty:
     temp_orders["TỒN KHO"] = temp_orders["TỒN KHO MỚI"].fillna(temp_orders["TỒN KHO"])
     temp_orders.drop(columns=["TỒN KHO MỚI"], inplace=True)
     st.session_state.df_cumulative_orders = temp_orders.copy()
-    st.sidebar.success("🔄 Cập nhật tồn kho mới thành công!")
+    st.sidebar.success("🔄 Cập nhật tồn kho mới thành công! / 新库存更新成功！")
 
 df_orders = st.session_state.df_cumulative_orders.copy()
 
 if df_orders.empty:
-    st.warning("⚠️ Hệ thống trống. Vui lòng tải lên tệp dữ liệu đơn hàng để khởi tạo lịch trình.")
+    st.warning("⚠️ Chưa có dữ liệu đơn hàng. Vui lòng tải lên tệp ở sidebar để bắt đầu. / 暂无订单数据。请在侧边栏上传文件以开始。")
     st.stop()
 
 # =========================
 # 3. GENERATION ENGINE (APPEND MODE & RE-CALCULATE LOGIC)
 # =========================
-if st.button("🚀 Generate / Refresh Schedule", type="primary"):
+if st.button("🚀 Generate / Refresh Schedule / 生成/刷新排程", type="primary"):
     start_planning_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     old_df = st.session_state.df_raw_schedule_history.copy()
     
@@ -215,14 +215,14 @@ if st.button("🚀 Generate / Refresh Schedule", type="primary"):
     df_all = df_all.sort_values(["SỐ MÁY", "SEQ"]).reset_index(drop=True)
     st.session_state.df_raw_schedule_history = df_all.copy()
     
-    # Tái cấu trúc sang dạng Bảng Ma trận Phân bố dọc/ngang
+    # Tái cấu trúc sang dạng Bảng Ma trận Phân bố dọc/ngang (Dịch tiêu đề hàng sang song ngữ)
     final_rows = []
     for machine_id, group in df_all.groupby("SỐ MÁY"):
         group = group.sort_values("SEQ")
-        row_ngay = {"SỐ MÁY": machine_id, "Thuộc tính": "LỊCH"}
-        row_lo = {"SỐ MÁY": machine_id, "Thuộc tính": "SỐ LÔ"}
-        row_hang = {"SỐ MÁY": machine_id, "Thuộc tính": "MÃ HÀNG"}
-        row_ns = {"SỐ MÁY": machine_id, "Thuộc tính": "NS"}
+        row_ngay = {"SỐ MÁY / 机号": machine_id, "Thuộc tính / 属性": "LỊCH / 日期"}
+        row_lo = {"SỐ MÁY / 机号": machine_id, "Thuộc tính / 属性": "SỐ LÔ / 批号"}
+        row_hang = {"SỐ MÁY / 机号": machine_id, "Thuộc tính / 属性": "MÃ HÀNG / 品号"}
+        row_ns = {"SỐ MÁY / 机号": machine_id, "Thuộc tính / 属性": "NS / 产能"}
         
         for _, r in group.iterrows():
             col = f"C{int(r['SEQ'])}"
@@ -234,7 +234,7 @@ if st.button("🚀 Generate / Refresh Schedule", type="primary"):
         final_rows.extend([row_ngay, row_lo, row_hang, row_ns])
         
     st.session_state.df_matrix_schedule = pd.DataFrame(final_rows)
-    st.success("🎉 Đã đồng bộ và làm mới cấu trúc lịch sản xuất!")
+    st.success("🎉 Đã đồng bộ và làm mới lịch sản xuất! / 生产排程已成功同步并刷新！")
 
 # =========================
 # 4. ADVANCED VISUAL MATRIX STYLING
@@ -243,19 +243,19 @@ def style_matrix(df):
     lot_colors = {}
     
     # Lấy danh sách số lô duy nhất từ dữ liệu
-    all_lots = df[df["Thuộc tính"] == "SỐ LÔ"].drop(columns=["SỐ MÁY", "Thuộc tính"], errors="ignore").values.flatten()
+    all_lots = df[df["Thuộc tính / 属性"].isin(["SỐ LÔ / 批号", "SỐ LÔ"])].drop(columns=["SỐ MÁY / 机号", "Thuộc tính / 属性"], errors="ignore").values.flatten()
     lots = list(dict.fromkeys([str(x) for x in all_lots if pd.notna(x) and str(x) != ""]))
 
     cmap = plt.get_cmap("tab20")
     for i, lot in enumerate(lots):
         lot_colors[lot] = mcolors.rgb2hex(cmap(i % 20))
 
-    # Cải tiến hàm tô màu: Chỉ kích hoạt màu nền đối với hàng thuộc tính "SỐ LÔ"
+    # Kích hoạt màu nền đối với hàng thuộc tính "SỐ LÔ / 批号"
     def color_cells(row):
-        is_lot_row = row["Thuộc tính"] == "SỐ LÔ"
+        is_lot_row = row["Thuộc tính / 属性"] in ["SỐ LÔ / 批号", "SỐ LÔ"]
         styles = []
         for col_name, val in row.items():
-            if col_name in ["SỐ MÁY", "Thuộc tính"]:
+            if col_name in ["SỐ MÁY / 机号", "Thuộc tính / 属性"]:
                 styles.append("")
             elif is_lot_row and str(val) in lot_colors:
                 styles.append(f"background-color: {lot_colors[str(val)]}; color: black; font-weight: bold;")
@@ -300,17 +300,17 @@ col_main, col_sub = st.columns([2, 1])
 
 with col_main:
     if not st.session_state.df_matrix_schedule.empty:
-        st.subheader("🗓️ CHÍNH: MA TRẬN LỊCH SẢN XUẤT TRÊN MÁY")
+        st.subheader("🗓️ CHÍNH: MA TRẬN LỊCH SẢN XUẤT TRÊN MÁY / 主表：机台生产排程矩阵")
         st.dataframe(
             style_matrix(st.session_state.df_matrix_schedule),
             use_container_width=True,
             hide_index=True
         )
     else:
-        st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng nhấn nút 'Generate / Refresh Schedule' để khởi tạo.")
+        st.info("Chưa có dữ liệu ma trận lịch trình. Vui lòng nhấn nút 'Generate / Refresh Schedule'. / 暂无排程矩阵数据。请点击“生成/刷新排程”按钮。")
 
 with col_sub:
-    st.subheader("📊 PHỤ: TIẾN ĐỘ THỜI GIAN THỰC")
+    st.subheader("📊 PHỤ: TIẾN ĐỘ THỜI GIAN THỰC / 副表：实时进度与状态")
     if not st.session_state.df_raw_schedule_history.empty and not df_orders.empty:
         df_history = st.session_state.df_raw_schedule_history.copy()
         df_end_date = df_history.groupby(["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG"], as_index=False)["Date_Obj"].max()
@@ -326,19 +326,22 @@ with col_sub:
         def check_status(row):
             if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):
                 if (row["SL ĐẶT"] - row["TỒN KHO"]) <= 0:
-                    return "🟢 Đủ Tồn Kho (OK)"
-                return "⚪ Chưa sắp lịch"
+                    return "🟢 Đủ Tồn Kho (OK) / 库存充足"
+                return "⚪ Chưa sắp lịch / 未排程"
 
             date_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"]).date()
             date_delivery = pd.to_datetime(row["NGÀY GIAO"]).date() if not pd.isna(row["NGÀY GIAO"]) else None
 
             if date_delivery and date_real > date_delivery:
-                return f"🔴 Trễ (Quá hạn { (date_real - date_delivery).days } ngày)"
+                return f"🔴 Trễ { (date_real - date_delivery).days } ngày / 延期 { (date_real - date_delivery).days } 天"
             else:
-                return "🟢 Kế hoạch Đạt (OK)"
+                return "🟢 Kế hoạch Đạt (OK) / 正常达成"
 
-        df_status["TRẠNG THÁI"] = df_status.apply(check_status, axis=1)
-        df_display_status = df_status[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "TRẠNG THÁI"]]
+        df_status["TRẠNG THÁI / 状态"] = df_status.apply(check_status, axis=1)
+        
+        # Đổi tên cột hiển thị bảng phụ sang song ngữ
+        df_display_status = df_status[["SỐ MÁY", "SỐ LÔ", "MÃ HÀNG", "TRẠNG THÁI / 状态"]].copy()
+        df_display_status.columns = ["SỐ MÁY / 机号", "SỐ LÔ / 批号", "MÃ HÀNG / 品号", "TRẠNG THÁI / 状态"]
 
         def style_status_rows(val):
             if "🔴" in str(val):
@@ -349,7 +352,7 @@ with col_sub:
 
         styled_sub_table = (
             df_display_status.style
-            .apply(lambda x: [style_status_rows(v) for v in x], subset=["TRẠNG THÁI"])
+            .apply(lambda x: [style_status_rows(v) for v in x], subset=["TRẠNG THÁI / 状态"])
             .set_table_styles([
                 {
                     "selector": "th",
@@ -364,4 +367,4 @@ with col_sub:
 
         st.dataframe(styled_sub_table, use_container_width=True, hide_index=True)
     else:
-        st.info("Hệ thống chưa có đủ lịch trình để cấu trúc bảng kiểm soát trạng thái.")
+        st.info("Hệ thống chưa có đủ lịch trình để cấu trúc bảng kiểm soát trạng thái. / 系统尚无足够排程数据来生成状态控制表。")
