@@ -9,7 +9,7 @@ from io import BytesIO
 # =========================
 # 1. CONFIG
 # =========================
-st.set_page_config(page_title="Production Schedule / 生产排程", layout="wide")
+st.set_page_config(page_title="Production Schedule", layout="wide")
 st.title("📅 PRODUCTION SCHEDULE DASHBOARD / 生产排程看板")
 
 st.markdown("""
@@ -162,11 +162,11 @@ if st.button("🚀 Generate / Refresh Schedule | 生成 / 刷新排程"):
 
         group = group.sort_values("SEQ")
 
-        # Bổ sung chữ song ngữ vào giá trị của cột Attribute để hiển thị ở dòng đầu mỗi nhóm máy
-        row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE / 排程日期"}
-        row_lo = {"SỐ MÁY": machine_id, "Attribute": "LOT / 批号"}
-        row_hang = {"SỐ MÁY": machine_id, "Attribute": "ITEM / 品号"}
-        row_ns = {"SỐ MÁY": machine_id, "Attribute": "OUTPUT / 产能"}
+        # LOGIC GỐC GIỮ NGUYÊN 100%: Sử dụng đúng từ khoá gốc hệ thống
+        row_ngay = {"SỐ MÁY": machine_id, "Attribute": "SCHEDULE"}
+        row_lo = {"SỐ MÁY": machine_id, "Attribute": "LOT"}
+        row_hang = {"SỐ MÁY": machine_id, "Attribute": "ITEM"}
+        row_ns = {"SỐ MÁY": machine_id, "Attribute": "OUTPUT"}
 
         for _, r in group.iterrows():
             col = f"C{int(r['SEQ'])}"
@@ -184,16 +184,16 @@ if st.button("🚀 Generate / Refresh Schedule | 生成 / 刷新排程"):
 # STYLE (MACHINE + LOT COLOR FIXED)
 # =========================
 def style_matrix(df):
+    # Tạo bản sao cục bộ để xử lý giao diện hiển thị
+    display_df = df.copy()
 
     cmap = plt.get_cmap("tab20")
-
     color_map = {}
     color_index = 0
 
-    for machine in df["SỐ MÁY"].unique():
-
-        # Khớp đúng với chuỗi "LOT / 批号" đã được song ngữ hóa ở trên
-        lot_row = df[(df["SỐ MÁY"] == machine) & (df["Attribute"] == "LOT / 批号")]
+    # Bước 1: Tính toán bảng màu dựa trên cấu trúc dữ liệu gốc của bảng truyền vào
+    for machine in display_df["SỐ MÁY"].unique():
+        lot_row = display_df[(display_df["SỐ MÁY"] == machine) & (display_df["Attribute"] == "LOT")]
 
         if lot_row.empty:
             continue
@@ -203,7 +203,6 @@ def style_matrix(df):
                 continue
 
             lot = str(lot_row[col].values[0])
-
             key = (machine, lot)
 
             if lot not in ["nan", "None", ""]:
@@ -215,34 +214,42 @@ def style_matrix(df):
         return color_map.get((machine, str(lot)), "")
 
     def apply_color(row):
-        machine = row["SỐ MÁY"]
+        # Lúc này row đã mang các tiêu đề cột song ngữ do chúng ta gán ở Bước 3 dưới đây
+        machine = row["SỐ MÁY / 机台号"]
         colors = []
 
         for col in row.index:
-
-            if col in ["SỐ MÁY", "Attribute"]:
+            if col in ["SỐ MÁY / 机台号", "THUỘC TÍNH / 属性"]:
                 colors.append("")
                 continue
 
-            # Khớp đúng với chuỗi "LOT / 批号"
-            lot_val = df.loc[
-                (df["SỐ MÁY"] == machine) &
-                (df["Attribute"] == "LOT / 批号"),
+            # Tìm kiếm dòng LOT dựa trên tên cột mới đã đổi sang tiếng Trung
+            lot_val = display_df.loc[
+                (display_df["SỐ MÁY / 机台号"] == machine) &
+                (display_df["THUỘC TÍNH / 属性"] == "LOT / 批号"),
                 col
             ].values
 
             lot_val = str(lot_val[0]) if len(lot_val) > 0 else ""
-
             colors.append(f"background-color: {get_color(machine, lot_val)}")
 
         return colors
 
-    # Thực hiện apply trên cấu trúc DataFrame gốc (cột giữ nguyên SỐ MÁY, Attribute để tránh lỗi KeyError)
-    styled = df.style.apply(apply_color, axis=1)
+    # Bước 2: Song ngữ hóa dữ liệu dòng của cột Attribute trước
+    attr_translation = {
+        "SCHEDULE": "SCHEDULE / 排程日期",
+        "LOT": "LOT / 批号",
+        "ITEM": "ITEM / 品号",
+        "OUTPUT": "OUTPUT / 产能"
+    }
+    display_df["Attribute"] = display_df["Attribute"].map(attr_translation).fillna(display_df["Attribute"])
 
-    # Đổi nhãn tiêu đề cột hiển thị ra ngoài giao diện (Không làm thay đổi cấu trúc DataFrame chạy ngầm)
-    new_labels = ["SỐ MÁY / 机台号", "THUỘC TÍNH / 属性"] + list(df.columns[2:])
-    styled = styled.relabel_columns(new_labels)
+    # Bước 3: Đổi tên tiêu đề cột trực tiếp trên DataFrame bằng thuộc tính .columns (Tương thích 100% mọi phiên bản Pandas)
+    new_columns = ["SỐ MÁY / 机台号", "THUỘC TÍNH / 属性"] + list(display_df.columns[2:])
+    display_df.columns = new_columns
+
+    # Bước 4: Áp dụng style màu sắc lên DataFrame đã chuyển đổi hoàn chỉnh sang song ngữ
+    styled = display_df.style.apply(apply_color, axis=1)
 
     styled = styled.set_table_styles([
         {"selector": "th",
@@ -274,7 +281,7 @@ def style_matrix(df):
 st.markdown("---")
 st.subheader("📦 INVENTORY UPDATE & DELAY ALERT SYSTEM / 库存更新与延期预警系统")
 
-# Thêm nút upload file tồn kho trên dashboard
+# Nút upload file tồn kho trên dashboard
 inv_file = st.file_uploader("📂 Upload Inventory File (Cập nhật Tồn Kho) / 上传库存文件 (更新库存)", type=["xlsx"], key="inv_upload")
 
 # Bản sao dữ liệu order để tính toán cảnh báo mà không ảnh hưởng tới lịch đã xếp
