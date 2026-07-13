@@ -12,22 +12,19 @@ from io import BytesIO
 st.set_page_config(page_title="Production Schedule / 生产 kế hoạch", layout="wide")
 st.title("📅 PRODUCTION SCHEDULE DASHBOARD / 生产排程看板")
 
-# CSS Ép toàn bộ thành phần bảng hiển thị của Streamlit phải căn giữa và kẻ viền rõ ràng
+# Ép toàn bộ bảng hiển thị trong Streamlit phải căn giữa nội dung và kẻ viền rõ ràng
 st.markdown("""
 <style>
 .block-container { padding-top: 1rem; }
 h1 { font-size: 30px; }
 
-/* Ép kiểu trên toàn bộ giao diện bảng HTML */
-div[data-testid="stDataFrame"] table, 
-div[data-testid="stDataFrame"] .stTable, 
-table {
+/* Định dạng bảng biểu chuyên nghiệp */
+div[data-testid="stDataFrame"] table {
     border-collapse: collapse !important;
     width: 100% !important;
-    border: 1px solid #333333 !important;
+    border: 2px solid #555555 !important;
 }
-
-div[data-testid="stDataFrame"] th, th {
+div[data-testid="stDataFrame"] th {
     background-color: #1f4e79 !important;
     color: white !important;
     text-align: center !important;
@@ -36,11 +33,10 @@ div[data-testid="stDataFrame"] th, th {
     border: 1px solid #333333 !important;
     padding: 8px !important;
 }
-
-div[data-testid="stDataFrame"] td, td, [data-testid="styled-table-cell"] {
+div[data-testid="stDataFrame"] td {
     text-align: center !important;
     vertical-align: middle !important;
-    border: 1px solid #888888 !important;
+    border: 1px solid #cccccc !important;
     padding: 8px !important;
 }
 </style>
@@ -266,28 +262,31 @@ def style_matrix(df):
     if "_ORIGINAL_MACHINE" in df.columns:
         styled = styled.hide(["_ORIGINAL_MACHINE"], axis="columns")
 
-    # Ép cấu trúc CSS Nội bộ vào thẳng đối tượng Styler (Fix triệt để lỗi mất khung/lệch hàng của Streamlit)
+    # Áp dụng căn giữa và kẻ viền chi tiết cho từng ô
     styled = styled.set_table_styles([
-        {"selector": "th", "props": [
-            ("background-color", "#1f4e79"),
-            ("color", "white"),
-            ("border", "1px solid #333333 !important"),
-            ("text-align", "center !important"),
-            ("vertical-align", "middle !important"),
-            ("font-weight", "bold"),
-            ("padding", "8px")
-        ]},
-        {"selector": "td", "props": [
-            ("border", "1px solid #888888 !important"),
-            ("text-align", "center !important"),
-            ("vertical-align", "middle !important"),
-            ("padding", "8px")
-        ]},
-        {"selector": "", "props": [
-            ("border-collapse", "collapse !important"),
-            ("width", "100% !important")
-        ]}
-    ], overwrite=False)
+        {"selector": "th",
+         "props": [
+             ("background-color", "#1f4e79"),
+             ("color", "white"),
+             ("border", "1px solid #333333"),
+             ("text-align", "center"),
+             ("vertical-align", "middle"),
+             ("font-weight", "bold"),
+             ("padding", "8px")
+         ]},
+        {"selector": "td",
+         "props": [
+             ("border", "1px solid #bbbbbb"),
+             ("text-align", "center"),
+             ("vertical-align", "middle"),
+             ("padding", "8px")
+         ]},
+        {"selector": "table",
+         "props": [
+             ("border-collapse", "collapse"),
+             ("width", "100%")
+         ]}
+    ])
 
     return styled
 
@@ -376,24 +375,24 @@ if not df_history.empty and not df_orders_calc.empty:
         df_alert_display = pd.DataFrame(alert_records)
         st.error("⚠️ BẢNG CẢNH BÁO TRẠNG THÁI VỀ TRỄ HÀNG / 交期交货延误状态交期预警表")
         
-        # Bảng cảnh báo được tiêm trực tiếp style căn giữa và kẻ viền vào lõi Styler
+        # Thiết kế bảng cảnh báo: màu đỏ cảnh báo, căn giữa và kẻ viền đen/xám rõ ràng
         styled_alert = df_alert_display.style.set_table_styles([
             {"selector": "th", "props": [
                 ("background-color", "#d9534f"), 
                 ("color", "white"), 
                 ("font-weight", "bold"), 
-                ("border", "1px solid #333333 !important"),
-                ("text-align", "center !important"),
-                ("vertical-align", "middle !important"),
+                ("border", "1px solid #333333"),
+                ("text-align", "center"),
+                ("vertical-align", "middle"),
                 ("padding", "8px")
             ]},
             {"selector": "td", "props": [
-                ("border", "1px solid #888888 !important"), 
-                ("text-align", "center !important"),
-                ("vertical-align", "middle !important"),
+                ("border", "1px solid #bbbbbb"), 
+                ("text-align", "center"),
+                ("vertical-align", "middle"),
                 ("padding", "8px")
             ]}
-        ], overwrite=False)
+        ])
         st.dataframe(styled_alert, use_container_width=True, hide_index=True)
     else:
         st.success("🎉 Hiện tại không có lô hàng nào bị trễ (Dashboard gọn gàng!) / 目前無任何批次延誤（看板整洁！）")
@@ -408,7 +407,7 @@ if not st.session_state.df_matrix_schedule.empty:
 
     st.subheader("📅 Production Schedule / 生产排程表")
 
-    # Hiển thị bảng lịch sản xuất đã găm sẵn Style ép viền và căn giữa
+    # Hiển thị bảng lịch sản xuất đã được căn giữa và kẻ viền chuyên nghiệp
     st.dataframe(
         style_matrix(st.session_state.df_matrix_schedule),
         use_container_width=True,
