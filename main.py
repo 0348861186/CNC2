@@ -355,7 +355,7 @@ if not df_history.empty and not df_orders_calc.empty:
         ])
         st.dataframe(styled_alert, use_container_width=True, hide_index=True)
     else:
-        st.success("🎉 Hiện tại không có lô hàng nào bị trễ (Dashboard gọn gàng!).")
+        st.success("🎉 Hiện tại không có lô hàng nào bị trễ.")
 else:
     st.info("Chưa có dữ liệu lịch xếp hoặc đơn hàng để thực hiện tính toán bảng cảnh báo.")
 
