@@ -187,7 +187,8 @@ if st.button("🚀 Generate / Refresh Schedule / 生成/刷新排程", type="pri
         if machine not in machine_seq:
             machine_seq[machine] = 0
             
-        days_needed = max(1, int(round(qty_needed / row["NĂNG SUẤT"])))
+        # Sử dụng np.ceil để làm tròn lên số ngày sản xuất cần thiết một cách an toàn
+        days_needed = max(1, int(np.ceil(qty_needed / row["NĂNG SUẤT"])))
         start_day = machine_last_date[machine]
         start_seq = machine_seq[machine]
         
@@ -324,16 +325,27 @@ with col_sub:
         )
 
         def check_status(row):
+            # 1. Kiểm tra nếu đơn hàng chưa được xếp lịch sản xuất
             if pd.isna(row["NGÀY HOÀN THÀNH THỰC TẾ"]):
                 if (row["SL ĐẶT"] - row["TỒN KHO"]) <= 0:
                     return "🟢 Đủ Tồn Kho (OK) / 库存充足"
                 return "⚪ Chưa sắp lịch / 未排程"
 
-            date_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"]).date()
-            date_delivery = pd.to_datetime(row["NGÀY GIAO"]).date() if not pd.isna(row["NGÀY GIAO"]) else None
+            # 2. Ép kiểu dữ liệu an toàn về dạng Timestamp của Pandas để xử lý giá trị trống NaT
+            ts_real = pd.to_datetime(row["NGÀY HOÀN THÀNH THỰC TẾ"])
+            ts_delivery = pd.to_datetime(row["NGÀY GIAO"])
 
-            if date_delivery and date_real > date_delivery:
-                return f"🔴 Trễ { (date_real - date_delivery).days } ngày / 延期 { (date_real - date_delivery).days } 天"
+            # Nếu không điền hạn ngày giao hàng (NaT) thì coi như mặc định đạt tiến độ công việc
+            if pd.isna(ts_delivery):
+                return "🟢 Kế hoạch Đạt (OK) / 正常达成"
+
+            # 3. Tiến hành trích xuất .date() để so sánh logic trực quan, chính xác giữa các ngày
+            date_real = ts_real.date()
+            date_delivery = ts_delivery.date()
+
+            if date_real > date_delivery:
+                delay_days = (date_real - date_delivery).days
+                return f"🔴 Trễ {delay_days} ngày / 延期 {delay_days} 天"
             else:
                 return "🟢 Kế hoạch Đạt (OK) / 正常达成"
 
